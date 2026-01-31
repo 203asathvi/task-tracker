@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Monthly Task Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#22c55e" />
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont;
+      background: #f3f4f6;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .app {
+      max-width: 100%;
+      background: white;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      overflow-x: auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    input, select, button {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      font-size: 14px;
+    }
+
+    button {
+      background: #22c55e;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      table-layout: fixed;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 4px;
+      text-align: center;
+      font-size: 11px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    /* Task column stays readable */
+    .task-col {
+      text-align: left;
+      width: 140px;
+      max-width: 140px;
+      font-weight: 500;
+    }
+
+    /* Date columns shrink evenly */
+    th:not(.task-col),
+    td:not(.task-col) {
+      width: calc((100% - 140px) / 31);
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px;
+      text-align: center;
+    }
+
+    th {
+      background: #e5e7eb;
+      font-weight: bold;
+    }
+
+    .task-col {
+      text-align: left;
+      min-width: 150px;
+    }
+
+    .done {
+      background: #dcfce7;
+    }
+
+    .missed {
+      background: #fee2e2;
+    }
+
+    .future {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <h1>Monthly Task Tracker</h1>
+
+  <div class="controls">
+    <select id="monthSelect">
+      <option value="1">Jan</option>
+      <option value="2">Feb</option>
+      <option value="3">Mar</option>
+      <option value="4">Apr</option>
+      <option value="5">May</option>
+      <option value="6">Jun</option>
+      <option value="7">Jul</option>
+      <option value="8">Aug</option>
+      <option value="9">Sep</option>
+      <option value="10">Oct</option>
+      <option value="11">Nov</option>
+      <option value="12">Dec</option>
+    </select>
+
+    <input id="yearInput" type="number" placeholder="Year" />
+
+    <button id="generateMonthBtn">Generate</button>
+  </div>
+
+  <div class="controls">
+    <input id="taskInput" placeholder="Enter a task..." />
+    <button id="addTaskBtn">Add Task</button>
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <div id="progressText" style="margin-bottom: 5px; font-weight: bold;"></div>
+    <div style="background:#e5e7eb; border-radius:10px; height:14px;">
+      <div id="progressBar" style="height:14px; width:0%; background:#22c55e; border-radius:10px;"></div>
+    </div>
+  </div>
+
+  <div id="tableContainer"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
