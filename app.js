@@ -11,6 +11,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let data = JSON.parse(localStorage.getItem("taskData")) || [];
   let compact = false;
 
+  // Populate months
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  months.forEach((m, i) => {
+    const opt = document.createElement("option");
+    opt.value = i + 1;
+    opt.textContent = m;
+    monthSelect.appendChild(opt);
+  });
+
   monthSelect.value = today.getMonth() + 1;
   yearInput.value = today.getFullYear();
 
@@ -39,12 +48,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const year = Number(yearInput.value);
     const month = Number(monthSelect.value);
     const monthData = getMonthData(year, month);
+    const days = daysInMonth(year, month);
 
     const checklist = {};
-    const days = daysInMonth(year, month);
-    for (let d = 1; d <= days; d++) {
-      checklist[d] = "";
-    }
+    for (let d = 1; d <= days; d++) checklist[d] = "";
 
     monthData.tasks.push({
       name: input.value,
@@ -80,24 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
     save();
   }
 
-  function generateMonth() {
-    const year = Number(yearInput.value);
-    const month = Number(monthSelect.value);
-    const monthData = getMonthData(year, month);
-    const days = daysInMonth(year, month);
-
-    monthData.tasks.forEach(task => {
-      for (let d = 1; d <= days; d++) {
-        const dateObj = new Date(year, month - 1, d);
-        if (dateObj > today) {
-          task.checklist[d] = "";
-        }
-      }
-    });
-
-    save();
-  }
-
   function updateProgress(monthData, days) {
     let total = 0;
     let done = 0;
@@ -112,10 +101,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-
     document.getElementById("progressText").innerText =
-      `Completed ${done} of ${total} checks — ${percent}%`;
-
+      `Completed ${done} of ${total} — ${percent}%`;
     document.getElementById("progressBar").style.width = percent + "%";
   }
 
@@ -135,13 +122,12 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tr></thead><tbody>";
 
     monthData.tasks.forEach((task, taskIndex) => {
-      html += "<tr>";
-
+      html += `<tr>`;
       html += `
         <td class="task-col">
-          <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
             <span>${task.name}</span>
-            <button class="danger" style="padding:2px 6px; font-size:10px;" onclick="deleteTask(${taskIndex})">✕</button>
+            <button class="danger delete-btn" data-index="${taskIndex}" style="padding:2px 6px; font-size:10px;">✕</button>
           </div>
         </td>
       `;
@@ -156,9 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (val === "✖") className = "missed";
         if (isFuture) className += " future";
 
-        html += `<td class="${className}" onclick="${
-          isFuture ? "" : `toggleCheck(${taskIndex}, ${d})`
-        }">${val}</td>`;
+        html += `<td class="${className}" data-task="${taskIndex}" data-day="${d}">${val}</td>`;
       }
 
       html += "</tr>";
@@ -167,16 +151,33 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tbody></table>";
     tableContainer.innerHTML = html;
 
+    // Attach delete button handlers
+    document.querySelectorAll(".delete-btn").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        deleteTask(Number(btn.dataset.index));
+      });
+    });
+
+    // Attach cell click handlers
+    document.querySelectorAll("td[data-task]").forEach(cell => {
+      cell.addEventListener("click", () => {
+        const task = Number(cell.dataset.task);
+        const day = Number(cell.dataset.day);
+
+        const dateObj = new Date(year, month - 1, day);
+        if (dateObj > today) return;
+
+        toggleCheck(task, day);
+      });
+    });
+
     updateProgress(monthData, days);
   }
 
-  // Expose functions for inline table buttons
-  window.toggleCheck = toggleCheck;
-  window.deleteTask = deleteTask;
-
-  // Buttons
   addTaskBtn.addEventListener("click", addTask);
-  generateMonthBtn.addEventListener("click", generateMonth);
+  generateMonthBtn.addEventListener("click", render);
+
   monthSelect.addEventListener("change", render);
   yearInput.addEventListener("change", render);
 
@@ -185,6 +186,5 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.classList.toggle("compact", compact);
   });
 
-  // Initial Render
   render();
 });
