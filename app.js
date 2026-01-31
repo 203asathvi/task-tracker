@@ -6,8 +6,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const tableContainer = document.getElementById("tableContainer");
   const addTaskBtn = document.getElementById("addTaskBtn");
   const generateMonthBtn = document.getElementById("generateMonthBtn");
+  const compactToggle = document.getElementById("compactToggle");
 
   let data = JSON.parse(localStorage.getItem("taskData")) || [];
+  let compact = false;
 
   monthSelect.value = today.getMonth() + 1;
   yearInput.value = today.getFullYear();
@@ -50,6 +52,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     input.value = "";
+    save();
+  }
+
+  function deleteTask(taskIndex) {
+    const year = Number(yearInput.value);
+    const month = Number(monthSelect.value);
+    const monthData = getMonthData(year, month);
+
+    if (!confirm("Delete this task?")) return;
+
+    monthData.tasks.splice(taskIndex, 1);
     save();
   }
 
@@ -123,7 +136,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     monthData.tasks.forEach((task, taskIndex) => {
       html += "<tr>";
-      html += `<td class='task-col'>${task.name}</td>`;
+
+      html += `
+        <td class="task-col">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span>${task.name}</span>
+            <button class="danger" style="padding:2px 6px; font-size:10px;" onclick="deleteTask(${taskIndex})">✕</button>
+          </div>
+        </td>
+      `;
 
       for (let d = 1; d <= days; d++) {
         const dateObj = new Date(year, month - 1, d);
@@ -149,14 +170,20 @@ document.addEventListener("DOMContentLoaded", () => {
     updateProgress(monthData, days);
   }
 
-  // Make toggleCheck global for table clicks
+  // Expose functions for inline table buttons
   window.toggleCheck = toggleCheck;
+  window.deleteTask = deleteTask;
 
-  // Button Events
+  // Buttons
   addTaskBtn.addEventListener("click", addTask);
   generateMonthBtn.addEventListener("click", generateMonth);
   monthSelect.addEventListener("change", render);
   yearInput.addEventListener("change", render);
+
+  compactToggle.addEventListener("click", () => {
+    compact = !compact;
+    document.body.classList.toggle("compact", compact);
+  });
 
   // Initial Render
   render();
