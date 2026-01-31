@@ -68,7 +68,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const monthData = getMonthData(year, month);
 
     if (!confirm("Delete this task?")) return;
-
     monthData.tasks.splice(taskIndex, 1);
     save();
   }
@@ -79,7 +78,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const monthData = getMonthData(year, month);
 
     const cell = monthData.tasks[taskIndex].checklist[day];
-
     if (cell === "") monthData.tasks[taskIndex].checklist[day] = "✔";
     else if (cell === "✔") monthData.tasks[taskIndex].checklist[day] = "✖";
     else monthData.tasks[taskIndex].checklist[day] = "";
@@ -151,7 +149,6 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tbody></table>";
     tableContainer.innerHTML = html;
 
-    // Attach delete button handlers
     document.querySelectorAll(".delete-btn").forEach(btn => {
       btn.addEventListener("click", e => {
         e.stopPropagation();
@@ -159,7 +156,6 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
 
-    // Attach cell click handlers
     document.querySelectorAll("td[data-task]").forEach(cell => {
       cell.addEventListener("click", () => {
         const task = Number(cell.dataset.task);
@@ -177,7 +173,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   addTaskBtn.addEventListener("click", addTask);
   generateMonthBtn.addEventListener("click", render);
-
   monthSelect.addEventListener("change", render);
   yearInput.addEventListener("change", render);
 
