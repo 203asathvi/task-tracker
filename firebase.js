@@ -12,6 +12,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
+import { setPersistence, browserLocalPersistence } 
+from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence);
+export { auth };
+
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 const db = getFirestore(app);
