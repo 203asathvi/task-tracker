@@ -93,6 +93,135 @@
       font-size: 13px;
       margin-bottom: 6px;
     }
+
+
+    /* ===== MOBILE CARD EXPERIENCE ===== */
+
+body.mobile-view {
+  background: #f3f4f6;
+}
+
+/* Sticky top controls (day selector area) */
+body.mobile-view #mobileDayControls {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: white;
+  padding: 10px;
+  border-radius: 14px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+  margin-bottom: 12px;
+}
+
+/* Mobile list container */
+.mobile-list {
+  display: none;
+}
+
+body.mobile-view .mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Card styling */
+.mobile-task {
+  background: white;
+  padding: 16px;
+  border-radius: 18px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Subtle press effect */
+.mobile-task:active {
+  transform: scale(0.98);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+}
+
+/* Task title */
+.mobile-task > div:first-child div:first-child {
+  font-size: 16px;
+}
+
+/* Streak text */
+.mobile-task > div:first-child div:last-child {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Action buttons */
+.mobile-task button {
+  border-radius: 12px;
+  border: none;
+  font-size: 16px;
+  min-width: 42px;
+  min-height: 42px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* ✔ button */
+.mobile-task button:nth-child(2) {
+  background: #22c55e;
+  color: white;
+}
+
+.mobile-task button:nth-child(2):active {
+  background: #16a34a;
+}
+
+/* ✖ button */
+.mobile-task button:nth-child(3) {
+  background: #ef4444;
+  color: white;
+}
+
+.mobile-task button:nth-child(3):active {
+  background: #dc2626;
+}
+
+/* Clear button */
+.mobile-task button.secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.mobile-task button.secondary:active {
+  background: #d1d5db;
+}
+
+/* Status badge */
+.mobile-task > div:last-child > div {
+  font-size: 18px;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: center;
+}
+
+/* Progress bar polish */
+#progressBar {
+  transition: width 0.4s ease;
+}
+
+/* Table still works for desktop */
+body.mobile-view table {
+  display: none;
+}
+
+/* Smooth transitions */
+button {
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+    
   </style>
 </head>
 <body>
