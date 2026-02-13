@@ -1,4 +1,7 @@
 
+
+
+
 // Firebase v10 Modular SDK
 import { initializeApp } 
 from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -19,7 +22,6 @@ import {
 
 
 // 🔥 YOUR FIREBASE CONFIG
-// Replace with your real config from Firebase Console
 const firebaseConfig = {
   apiKey: "AIzaSyAf5HZ3nKxxooGllmVw7BinGOsN45lBIH0",
   authDomain: "task-tracker-1e44a.firebaseapp.com",
@@ -27,39 +29,39 @@ const firebaseConfig = {
   storageBucket: "task-tracker-1e44a.firebasestorage.app",
   messagingSenderId: "43258116904",
   appId: "1:43258116904:web:6e37747abcfe5495bd6e1d"
+
 };
 
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-
-// 🔐 AUTH SETUP
+// 🔐 AUTH
 const auth = getAuth(app);
 
-// Force persistent login (IMPORTANT for mobile)
-await setPersistence(auth, browserLocalPersistence);
+// Set persistence safely (no await at top level)
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log("Auth persistence set to LOCAL");
+  })
+  .catch((error) => {
+    console.error("Persistence error:", error);
+  });
 
-// Google provider
 const provider = new GoogleAuthProvider();
-provider.setCustomParameters({
-  prompt: "select_account"
-});
+provider.setCustomParameters({ prompt: "select_account" });
 
-
-// 🔥 FIRESTORE SETUP
+// 🔥 FIRESTORE
 const db = getFirestore(app);
 
 
 // ☁️ CLOUD SAVE
 async function cloudSave(uid, data) {
   try {
-    const ref = doc(db, "users", uid);
-    await setDoc(ref, { taskData: data });
+    await setDoc(doc(db, "users", uid), { taskData: data });
     console.log("Cloud save successful");
   } catch (error) {
     console.error("Cloud save failed:", error);
-    alert("Cloud save failed. Check console.");
   }
 }
 
@@ -67,23 +69,16 @@ async function cloudSave(uid, data) {
 // ☁️ CLOUD LOAD
 async function cloudLoad(uid) {
   try {
-    const ref = doc(db, "users", uid);
-    const snap = await getDoc(ref);
-
+    const snap = await getDoc(doc(db, "users", uid));
     if (snap.exists()) {
-      console.log("Cloud load successful");
       return snap.data().taskData || [];
-    } else {
-      console.log("No cloud data found");
-      return null;
     }
+    return null;
   } catch (error) {
     console.error("Cloud load failed:", error);
-    alert("Cloud load failed. Check console.");
     return null;
   }
 }
 
-
-// Export everything
 export { auth, provider, cloudSave, cloudLoad };
+
