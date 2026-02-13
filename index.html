@@ -20,15 +20,14 @@
       padding: 16px;
     }
 
-    h1 {
-      text-align: center;
-    }
+    h1 { text-align: center; }
 
     .controls {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 10px;
+      align-items: center;
     }
 
     input, select, button {
@@ -45,13 +44,8 @@
       cursor: pointer;
     }
 
-    button.secondary {
-      background: #6b7280;
-    }
-
-    button.danger {
-      background: #ef4444;
-    }
+    button.secondary { background: #6b7280; }
+    button.danger { background: #ef4444; }
 
     table {
       border-collapse: collapse;
@@ -65,208 +59,129 @@
       text-align: center;
     }
 
-    .task-col {
-      text-align: left;
-      min-width: 140px;
-    }
-
+    .task-col { text-align: left; min-width: 140px; }
     .done { background: #dcfce7; }
     .missed { background: #fee2e2; }
 
-    /* MOBILE MODE */
+    .status { font-size: 13px; margin-bottom: 6px; }
+
+    /* Hide table in mobile mode */
     body.mobile-view table { display: none; }
-
-    .mobile-list { display: none; }
-    body.mobile-view .mobile-list { display: block; }
-
-    .mobile-task {
-      background: white;
-      padding: 12px;
-      margin-bottom: 8px;
-      border-radius: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .status {
-      font-size: 13px;
-      margin-bottom: 6px;
-    }
-
 
     /* ===== MOBILE CARD EXPERIENCE ===== */
 
-body.mobile-view {
-  background: #f3f4f6;
-}
+    /* Show mobile day controls only in mobile view */
+    body.mobile-view #mobileDayControls { display: flex !important; }
 
-/* Sticky top controls (day selector area) */
-body.mobile-view #mobileDayControls {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: white;
-  padding: 10px;
-  border-radius: 14px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
-  margin-bottom: 12px;
-}
+    /* Sticky top controls (day selector area) */
+    body.mobile-view #mobileDayControls {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: white;
+      padding: 10px;
+      border-radius: 14px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+      margin: 12px 0;
+    }
 
-/* Mobile list container */
-.mobile-list {
-  display: none;
-}
+    /* Mobile list container */
+    #mobileList { display: none; }
 
-body.mobile-view .mobile-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+    body.mobile-view #mobileList {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 12px;
+    }
 
-/* Card styling */
-.mobile-task {
-  background: white;
-  padding: 16px;
-  border-radius: 18px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
+    /* Card styling */
+    .mobile-task {
+      background: white;
+      padding: 16px;
+      border-radius: 18px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
 
-/* Subtle press effect */
-.mobile-task:active {
-  transform: scale(0.98);
-  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-}
+    .mobile-task:active {
+      transform: scale(0.98);
+      box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+    }
 
-/* Task title */
-.mobile-task > div:first-child div:first-child {
-  font-size: 16px;
-}
+    /* Action buttons */
+    .mobile-task button {
+      border-radius: 12px;
+      border: none;
+      font-size: 16px;
+      min-width: 42px;
+      min-height: 42px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
 
-/* Streak text */
-.mobile-task > div:first-child div:last-child {
-  font-size: 12px;
-  color: #6b7280;
-}
+    /* Clear button */
+    .mobile-task button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
 
-/* Action buttons */
-.mobile-task button {
-  border-radius: 12px;
-  border: none;
-  font-size: 16px;
-  min-width: 42px;
-  min-height: 42px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
+    /* Progress bar polish */
+    #progressBar { transition: width 0.4s ease; }
 
-/* ✔ button */
-.mobile-task button:nth-child(2) {
-  background: #22c55e;
-  color: white;
-}
-
-.mobile-task button:nth-child(2):active {
-  background: #16a34a;
-}
-
-/* ✖ button */
-.mobile-task button:nth-child(3) {
-  background: #ef4444;
-  color: white;
-}
-
-.mobile-task button:nth-child(3):active {
-  background: #dc2626;
-}
-
-/* Clear button */
-.mobile-task button.secondary {
-  background: #e5e7eb;
-  color: #111827;
-}
-
-.mobile-task button.secondary:active {
-  background: #d1d5db;
-}
-
-/* Status badge */
-.mobile-task > div:last-child > div {
-  font-size: 18px;
-  font-weight: 700;
-  min-width: 28px;
-  text-align: center;
-}
-
-/* Progress bar polish */
-#progressBar {
-  transition: width 0.4s ease;
-}
-
-/* Table still works for desktop */
-body.mobile-view table {
-  display: none;
-}
-
-/* Smooth transitions */
-button {
-  transition: background 0.2s ease, transform 0.1s ease;
-}
-
-button:active {
-  transform: scale(0.97);
-}
-
-    
+    button { transition: background 0.2s ease, transform 0.1s ease; }
+    button:active { transform: scale(0.97); }
   </style>
 </head>
+
 <body>
+  <div class="app">
+    <h1>Monthly Task Tracker</h1>
 
-<div class="app">
-  <h1>Monthly Task Tracker</h1>
+    <div class="status" id="statusText">Not signed in</div>
 
-  <div class="status" id="statusText">Not signed in</div>
-  
-  <div class="controls">
-    <button id="loginBtn">Sign In</button>
-    <button id="logoutBtn" class="secondary">Logout</button>
-    <button id="viewToggle" class="secondary">Toggle View</button>
+    <div class="controls">
+      <button id="loginBtn">Sign In</button>
+      <button id="logoutBtn" class="secondary">Logout</button>
+      <button id="viewToggle" class="secondary">Toggle View</button>
+    </div>
+
+    <div class="controls">
+      <select id="monthSelect"></select>
+      <input id="yearInput" type="number" />
+      <button id="generateMonthBtn">Generate</button>
+    </div>
+
+    <div class="controls">
+      <input id="taskInput" placeholder="Enter a task..." />
+      <button id="addTaskBtn">Add Task</button>
+    </div>
+
+    <div id="progressText"></div>
+    <div style="background:#e5e7eb;height:10px;border-radius:8px;">
+      <div id="progressBar" style="height:10px;width:0%;background:#22c55e;border-radius:8px;"></div>
+    </div>
+
+    <!-- Streak summary -->
+    <div id="streakText" style="margin:10px 0; font-weight:600;"></div>
+
+    <!-- Mobile day controls -->
+    <div class="controls" id="mobileDayControls" style="display:none;">
+      <label style="font-size:14px;">Day:</label>
+      <select id="daySelect"></select>
+      <button id="todayBtn" class="secondary">Today</button>
+    </div>
+
+    <!-- Mobile cards -->
+    <div id="mobileList"></div>
+
+    <!-- Desktop table -->
+    <div id="tableContainer"></div>
   </div>
 
-  <div class="controls">
-    <select id="monthSelect"></select>
-    <input id="yearInput" type="number" />
-    <button id="generateMonthBtn">Generate</button>
-  </div>
-
-  <div class="controls">
-    <input id="taskInput" placeholder="Enter a task..." />
-    <button id="addTaskBtn">Add Task</button>
-  </div>
-
-  <div id="progressText"></div>
-  <div style="background:#e5e7eb;height:10px;border-radius:8px;">
-    <div id="progressBar" style="height:10px;width:0%;background:#22c55e;border-radius:8px;"></div>
-  </div>
-
-  <div id="tableContainer"></div>
-</div>
-  <!-- Add below progress bar -->
-<div id="streakText" style="margin:10px 0; font-weight:600;"></div>
-
-<!-- Only useful in mobile/card view -->
-<div class="controls" id="mobileDayControls" style="display:none;">
-  <label style="font-size:14px;">Day:</label>
-  <select id="daySelect"></select>
-  <button id="todayBtn" class="secondary">Today</button>
-</div>
-
-<div class="mobile-list" id="mobileList"></div>
-
-<script type="module" src="app.js?v=20260213a"></script>
+  <script type="module" src="app.js?v=20260213a"></script>
 </body>
 </html>
