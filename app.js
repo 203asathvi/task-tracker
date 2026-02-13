@@ -23,6 +23,14 @@ document.addEventListener("DOMContentLoaded", () => {
     o.value=i+1;
     o.textContent=m;
     monthSelect.appendChild(o);
+  getRedirectResult(auth).then((result) => {
+  if (result?.user) {
+    console.log("Redirect login success");
+  }
+  }).catch((error) => {
+  console.error("Redirect error:", error);
+  });
+
   });
 
   monthSelect.value = today.getMonth()+1;
