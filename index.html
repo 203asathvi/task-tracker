@@ -65,6 +65,24 @@
 
     .status { font-size: 13px; margin-bottom: 6px; }
 
+    /* Wrap table horizontally (recommended) */
+    #tableContainer { overflow-x: auto; }
+    
+    /* Sticky/pinned first column (Task) */
+    table { border-collapse: separate; border-spacing: 0; }
+    
+    th.task-col, td.task-col {
+      position: sticky;
+      left: 0;
+      background: white;
+      z-index: 3;
+      box-shadow: 6px 0 8px rgba(0,0,0,0.04);
+    }
+
+    /* Keep header above cells */
+    thead th { position: sticky; top: 0; z-index: 2; background: #e5e7eb; }
+    thead th.task-col { z-index: 4; } /* top-left cell on top */
+        
     /* Hide table in mobile mode */
     body.mobile-view table { display: none; }
 
@@ -153,6 +171,8 @@
       <select id="monthSelect"></select>
       <input id="yearInput" type="number" />
       <button id="generateMonthBtn">Generate</button>
+      <button id="saveDayBtn" class="secondary" disabled>💾 Save Day</button>
+      <span id="saveHint" style="font-size:12px; opacity:.75;"></span>
     </div>
 
     <div class="controls">
