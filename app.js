@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const today = new Date();
   let currentUser = null;
 
-  // device id for tie-breakers
+  // stable device id for tie-breakers
   const deviceIdKey = "taskTrackerDeviceId";
   const deviceId =
     localStorage.getItem(deviceIdKey) ||
@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return id;
     })();
 
-  // local storage payload (we keep meta)
+  // payload storage (meta + data)
   let localPayload = JSON.parse(localStorage.getItem("taskPayload")) || null;
 
   // Backward compatibility
@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   let data = Array.isArray(localPayload.data) ? localPayload.data : [];
-  let selectedDay = today.getDate(); // for mobile cards
+  let selectedDay = today.getDate();
 
   // ---------- Auto mobile view (remember choice) ----------
   const MOBILE_BREAKPOINT = 768;
@@ -116,7 +116,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Date(y, m, 0).getDate();
   }
 
-  // Checklist cell: { v: "", "✔", "✖", t: epochMs, by: deviceId }
+  // ✅ always create correct cell objects
+  function makeEmptyCell() {
+    return { v: "", t: 0, by: "" };
+  }
+
   function normalizeCell(cell) {
     if (cell && typeof cell === "object" && "v" in cell && "t" in cell) return cell;
     const v = typeof cell === "string" ? cell : "";
@@ -138,7 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const now = Date.now();
     localPayload = { meta: { updatedAt: now, deviceId }, data };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
-    localStorage.setItem("taskData", JSON.stringify(data)); // legacy
+    localStorage.setItem("taskData", JSON.stringify(data)); // legacy mirror
   }
 
   function getMonthData(y, m) {
@@ -151,6 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return found;
   }
 
+  // ✅ This guarantees every cell is an object (so edits work)
   function migrateMonth(md, days) {
     md.tasks.forEach((t) => {
       if (!t.checklist) t.checklist = {};
@@ -163,8 +168,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------- Conflict merge ----------
   function mergePayload(localP, cloudP) {
     const out = { meta: { updatedAt: Date.now(), deviceId }, data: [] };
+    const byKey = new Map();
 
-    const byKey = new Map(); // `${year}-${month}` -> monthObj
     const addMonth = (mo) => {
       const key = `${mo.year}-${mo.month}`;
       if (!byKey.has(key)) byKey.set(key, { year: mo.year, month: mo.month, tasks: [], updatedAt: 0 });
@@ -207,7 +212,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ingest(localP);
     ingest(cloudP);
-
     out.data = Array.from(byKey.values()).sort((a, b) => (a.year - b.year) || (a.month - b.month));
     return out;
   }
@@ -216,7 +220,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!currentUser) return;
 
     const cloudData = await cloudLoad(currentUser.uid);
-
     const cloudPayload =
       cloudData && typeof cloudData === "object" && !Array.isArray(cloudData) && "data" in cloudData
         ? cloudData
@@ -233,7 +236,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Habit streak ----------
   function computeStreakForTaskName(taskName) {
-    const statusByDate = new Map(); // iso -> "✔"/"✖"/""
+    const statusByDate = new Map();
     for (const mo of data) {
       if (!mo?.tasks) continue;
       for (const t of mo.tasks) {
@@ -259,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return streak;
   }
 
-  // ---------- Rendering helpers ----------
+  // ---------- Rendering ----------
   function updateProgress(md, days) {
     let total = 0, done = 0;
     md.tasks.forEach((t) => {
@@ -317,12 +320,12 @@ document.addEventListener("DOMContentLoaded", () => {
       cell.addEventListener("click", () => {
         const t = Number(cell.dataset.t);
         const d = Number(cell.dataset.d);
-        const current = cellValue(md.tasks[t].checklist?.[d]);
-        const next = current === "" ? "✔" : current === "✔" ? "✖" : "";
+        const cur = cellValue(md.tasks[t].checklist?.[d]);
+        const next = cur === "" ? "✔" : cur === "✔" ? "✖" : "";
         setCell(md.tasks[t], d, next);
         md.updatedAt = Date.now();
         saveLocal();
-        if (navigator.onLine) syncWithCloud().catch(() => {});
+        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
         render();
       });
     });
@@ -335,7 +338,7 @@ document.addEventListener("DOMContentLoaded", () => {
         md.tasks.splice(idx, 1);
         md.updatedAt = Date.now();
         saveLocal();
-        if (navigator.onLine) syncWithCloud().catch(() => {});
+        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
         render();
       });
     });
@@ -391,7 +394,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setCell(t, day, "✔");
         md.updatedAt = Date.now();
         saveLocal();
-        if (navigator.onLine) syncWithCloud().catch(() => {});
+        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
         render();
       };
 
@@ -403,7 +406,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setCell(t, day, "✖");
         md.updatedAt = Date.now();
         saveLocal();
-        if (navigator.onLine) syncWithCloud().catch(() => {});
+        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
         render();
       };
 
@@ -415,7 +418,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setCell(t, day, "");
         md.updatedAt = Date.now();
         saveLocal();
-        if (navigator.onLine) syncWithCloud().catch(() => {});
+        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
         render();
       };
 
@@ -432,10 +435,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderStreakSummary(md) {
     if (!streakText) return;
-    if (!md.tasks.length) {
-      streakText.textContent = "";
-      return;
-    }
+    if (!md.tasks.length) { streakText.textContent = ""; return; }
     const top = md.tasks
       .map((t) => ({ name: t.name, streak: computeStreakForTaskName(t.name) }))
       .sort((a, b) => b.streak - a.streak)
@@ -493,41 +493,47 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ---------- UI ----------
-  if (addTaskBtn) addTaskBtn.addEventListener("click", () => {
-    const input = document.getElementById("taskInput");
-    if (!input || !input.value.trim()) return;
+  if (addTaskBtn) {
+    addTaskBtn.addEventListener("click", () => {
+      const input = document.getElementById("taskInput");
+      if (!input || !input.value.trim()) return;
 
-    const y = Number(yearInput.value);
-    const m = Number(monthSelect.value);
-    const md = getMonthData(y, m);
-    const dim = daysInMonth(y, m);
+      const y = Number(yearInput.value);
+      const m = Number(monthSelect.value);
+      const md = getMonthData(y, m);
+      const dim = daysInMonth(y, m);
 
-    const checklist = {};
-    for (let d = 1; d <= dim; d++) checklist[d] = normalizeCell("");
+      const checklist = {};
+      for (let d = 1; d <= dim; d++) checklist[d] = makeEmptyCell(); // ✅ correct init
 
-    md.tasks.push({ name: input.value.trim(), checklist, updatedAt: Date.now() });
-    md.updatedAt = Date.now();
-    input.value = "";
+      md.tasks.push({ name: input.value.trim(), checklist, updatedAt: Date.now() });
+      md.updatedAt = Date.now();
+      input.value = "";
 
-    saveLocal();
-    if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
-    render();
-  });
+      saveLocal();
+      if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
+      render();
+    });
+  }
 
   if (generateMonthBtn) generateMonthBtn.addEventListener("click", render);
   if (monthSelect) monthSelect.addEventListener("change", render);
   if (yearInput) yearInput.addEventListener("change", render);
 
-  if (daySelect) daySelect.addEventListener("change", () => {
-    selectedDay = Number(daySelect.value);
-    render();
-  });
+  if (daySelect) {
+    daySelect.addEventListener("change", () => {
+      selectedDay = Number(daySelect.value);
+      render();
+    });
+  }
 
-  if (todayBtn) todayBtn.addEventListener("click", () => {
-    selectedDay = today.getDate();
-    if (daySelect) daySelect.value = String(selectedDay);
-    render();
-  });
+  if (todayBtn) {
+    todayBtn.addEventListener("click", () => {
+      selectedDay = today.getDate();
+      if (daySelect) daySelect.value = String(selectedDay);
+      render();
+    });
+  }
 
   render();
 });
