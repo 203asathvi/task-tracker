@@ -9,7 +9,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 document.addEventListener("DOMContentLoaded", () => {
-  // ---------- DOM ----------
+
   const monthSelect = document.getElementById("monthSelect");
   const yearInput = document.getElementById("yearInput");
   const tableContainer = document.getElementById("tableContainer");
@@ -23,28 +23,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const addTaskBtn = document.getElementById("addTaskBtn");
   const generateMonthBtn = document.getElementById("generateMonthBtn");
 
-  const debugBox = document.getElementById("debugBox");
-
-  // ---------- Debug helpers ----------
-  const dbg = (msg) => {
-    const text = typeof msg === "string" ? msg : JSON.stringify(msg, null, 2);
-    console.log(text);
-    if (debugBox) debugBox.textContent = text;
-  };
-
-  window.addEventListener("error", (e) => dbg("JS error:\n" + (e?.message || e)));
-  window.addEventListener("unhandledrejection", (e) =>
-    dbg("Promise error:\n" + (e?.reason?.message || e?.reason || e))
-  );
-
-  dbg("App loaded.\nUA=" + navigator.userAgent);
-
-  // ---------- State ----------
   const today = new Date();
   let data = JSON.parse(localStorage.getItem("taskData")) || [];
   let currentUser = null;
 
-  // ---------- Months ----------
+  // ---------- Month setup ----------
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   if (monthSelect && monthSelect.options.length === 0) {
     months.forEach((m, i) => {
@@ -54,10 +37,10 @@ document.addEventListener("DOMContentLoaded", () => {
       monthSelect.appendChild(opt);
     });
   }
-  if (monthSelect) monthSelect.value = String(today.getMonth() + 1);
-  if (yearInput) yearInput.value = String(today.getFullYear());
 
-  // ---------- Utilities ----------
+  if (monthSelect) monthSelect.value = today.getMonth() + 1;
+  if (yearInput) yearInput.value = today.getFullYear();
+
   function daysInMonth(y, m) {
     return new Date(y, m, 0).getDate();
   }
@@ -68,13 +51,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function autoSync() {
     if (!currentUser) return;
-    cloudSave(currentUser.uid, data).catch((err) => {
-      dbg("Cloud sync failed:\n" + (err?.code || "") + "\n" + (err?.message || err));
-    });
+    cloudSave(currentUser.uid, data).catch(() => {});
   }
 
   function getMonthData(y, m) {
-    let found = data.find((d) => d.year === y && d.month === m);
+    let found = data.find(d => d.year === y && d.month === m);
     if (!found) {
       found = { year: y, month: m, tasks: [] };
       data.push(found);
@@ -82,13 +63,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return found;
   }
 
-  // ---------- App actions ----------
   function addTask() {
     const input = document.getElementById("taskInput");
     if (!input || !input.value.trim()) return;
 
-    const y = Number(yearInput?.value || today.getFullYear());
-    const m = Number(monthSelect?.value || today.getMonth() + 1);
+    const y = Number(yearInput.value);
+    const m = Number(monthSelect.value);
     const md = getMonthData(y, m);
     const days = daysInMonth(y, m);
 
@@ -104,14 +84,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function toggleCheck(taskIndex, day) {
-    const y = Number(yearInput?.value || today.getFullYear());
-    const m = Number(monthSelect?.value || today.getMonth() + 1);
+    const y = Number(yearInput.value);
+    const m = Number(monthSelect.value);
     const md = getMonthData(y, m);
 
-    if (!md.tasks[taskIndex]) return;
-
     const val = md.tasks[taskIndex].checklist[day] ?? "";
-    md.tasks[taskIndex].checklist[day] = val === "" ? "✔" : val === "✔" ? "✖" : "";
+    md.tasks[taskIndex].checklist[day] =
+      val === "" ? "✔" : val === "✔" ? "✖" : "";
 
     saveLocal();
     autoSync();
@@ -119,15 +98,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function deleteTask(taskIndex) {
-    const y = Number(yearInput?.value || today.getFullYear());
-    const m = Number(monthSelect?.value || today.getMonth() + 1);
+    const y = Number(yearInput.value);
+    const m = Number(monthSelect.value);
     const md = getMonthData(y, m);
 
-    if (!md.tasks[taskIndex]) return;
     if (!confirm("Delete this task?")) return;
 
     md.tasks.splice(taskIndex, 1);
-
     saveLocal();
     autoSync();
     render();
@@ -137,7 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let total = 0;
     let done = 0;
 
-    md.tasks.forEach((t) => {
+    md.tasks.forEach(t => {
       for (let d = 1; d <= days; d++) {
         if (t.checklist[d] !== "") {
           total++;
@@ -151,20 +128,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (progressBar) progressBar.style.width = pct + "%";
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
   function render() {
     if (!tableContainer) return;
 
-    const y = Number(yearInput?.value || today.getFullYear());
-    const m = Number(monthSelect?.value || today.getMonth() + 1);
+    const y = Number(yearInput.value);
+    const m = Number(monthSelect.value);
     const md = getMonthData(y, m);
     const days = daysInMonth(y, m);
 
@@ -174,7 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     md.tasks.forEach((t, i) => {
       html += "<tr>";
-      html += `<td class="task-col">${escapeHtml(t.name)}
+      html += `<td class="task-col">${t.name}
         <button class="danger del" data-i="${i}" style="margin-left:6px;">✕</button>
       </td>`;
 
@@ -183,19 +151,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const cls = val === "✔" ? "done" : val === "✖" ? "missed" : "";
         html += `<td class="${cls}" data-t="${i}" data-d="${d}">${val}</td>`;
       }
+
       html += "</tr>";
     });
 
     html += "</tbody></table>";
     tableContainer.innerHTML = html;
 
-    tableContainer.querySelectorAll("td[data-t]").forEach((cell) => {
+    tableContainer.querySelectorAll("td[data-t]").forEach(cell => {
       cell.addEventListener("click", () => {
         toggleCheck(Number(cell.dataset.t), Number(cell.dataset.d));
       });
     });
 
-    tableContainer.querySelectorAll(".del").forEach((btn) => {
+    tableContainer.querySelectorAll(".del").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         deleteTask(Number(btn.dataset.i));
@@ -205,71 +174,44 @@ document.addEventListener("DOMContentLoaded", () => {
     updateProgress(md, days);
   }
 
-  // ---------- AUTH: redirect result ----------
-  getRedirectResult(auth)
-    .then((result) => {
-      if (result?.user) {
-        dbg("getRedirectResult: user=" + result.user.email);
-      } else {
-        dbg("getRedirectResult: no user (normal if not returning from login)");
-      }
-    })
-    .catch((err) => {
-      dbg("getRedirectResult FAILED:\n" + (err?.code || "") + "\n" + (err?.message || err));
-    });
+  // ---------- Auth handling ----------
 
-  // ---------- AUTH: state changes ----------
-  onAuthStateChanged(auth, async (user) => {
+  getRedirectResult(auth).catch(() => {});
+
+  onAuthStateChanged(auth, async user => {
     if (user) {
       currentUser = user;
       if (statusText) statusText.textContent = "Signed in as " + user.email;
-      dbg("onAuthStateChanged: signed in " + user.email);
 
       try {
         const cloud = await cloudLoad(user.uid);
-        dbg("cloudLoad: " + (cloud ? "loaded data" : "no data"));
         if (cloud) {
           data = cloud;
           saveLocal();
         }
-      } catch (err) {
-        dbg("cloudLoad FAILED:\n" + (err?.code || "") + "\n" + (err?.message || err));
-      }
+      } catch {}
 
       render();
     } else {
       currentUser = null;
       if (statusText) statusText.textContent = "Not signed in";
-      dbg("onAuthStateChanged: not signed in");
     }
   });
 
-  // ---------- Login: try popup, fallback to redirect ----------
+  // Login (popup first, redirect fallback)
   if (loginBtn) {
     loginBtn.addEventListener("click", async () => {
       try {
-        dbg("Login clicked -> trying POPUP...");
-        const res = await signInWithPopup(auth, provider);
-        dbg("Popup success: " + res.user.email);
-      } catch (e) {
-        dbg("Popup failed:\n" + (e?.code || "") + "\n" + (e?.message || e) + "\n\nTrying REDIRECT...");
-        try {
-          await signInWithRedirect(auth, provider);
-        } catch (e2) {
-          dbg("Redirect failed:\n" + (e2?.code || "") + "\n" + (e2?.message || e2));
-        }
+        await signInWithPopup(auth, provider);
+      } catch {
+        await signInWithRedirect(auth, provider);
       }
     });
   }
 
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
-      try {
-        await signOut(auth);
-        dbg("Signed out");
-      } catch (err) {
-        dbg("signOut FAILED:\n" + (err?.code || "") + "\n" + (err?.message || err));
-      }
+      await signOut(auth);
     });
   }
 
@@ -285,6 +227,5 @@ document.addEventListener("DOMContentLoaded", () => {
   if (monthSelect) monthSelect.addEventListener("change", render);
   if (yearInput) yearInput.addEventListener("change", render);
 
-  // ---------- Initial render ----------
   render();
 });
