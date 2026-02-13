@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const today = new Date();
   let currentUser = null;
 
-  // stable device id for tie-breakers
+  // stable device id for conflict resolution tie-breaks
   const deviceIdKey = "taskTrackerDeviceId";
   const deviceId =
     localStorage.getItem(deviceIdKey) ||
@@ -48,7 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // payload storage (meta + data)
   let localPayload = JSON.parse(localStorage.getItem("taskPayload")) || null;
 
-  // Backward compatibility
+  // Backward compatibility: old builds may have taskData only
   if (!localPayload) {
     const legacy = JSON.parse(localStorage.getItem("taskData")) || [];
     localPayload = { meta: { updatedAt: 0, deviceId }, data: legacy };
@@ -57,6 +57,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let data = Array.isArray(localPayload.data) ? localPayload.data : [];
   let selectedDay = today.getDate();
+
+  // ---------- Performance: debounced persistence/sync ----------
+  let saveTimer = null;
+  let syncTimer = null;
+
+  function scheduleSaveLocal() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveLocal();
+    }, 250);
+  }
+
+  function scheduleCloudSync() {
+    if (!currentUser) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      if (navigator.onLine) syncWithCloud().catch(() => {});
+    }, 1500);
+  }
 
   // ---------- Auto mobile view (remember choice) ----------
   const MOBILE_BREAKPOINT = 768;
@@ -81,7 +100,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("resize", () => {
     const saved = localStorage.getItem(VIEW_KEY);
-    if (!saved) detectViewMode();
+    if (!saved) {
+      detectViewMode();
+      // no heavy full render on every resize; just repaint if mode flips
+      render();
+    }
   });
 
   if (viewToggle) {
@@ -116,7 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Date(y, m, 0).getDate();
   }
 
-  // ✅ always create correct cell objects
+  // Checklist cell: { v: "", "✔", "✖", t: epochMs, by: deviceId }
   function makeEmptyCell() {
     return { v: "", t: 0, by: "" };
   }
@@ -155,7 +178,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return found;
   }
 
-  // ✅ This guarantees every cell is an object (so edits work)
   function migrateMonth(md, days) {
     md.tasks.forEach((t) => {
       if (!t.checklist) t.checklist = {};
@@ -165,7 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------- Conflict merge ----------
+  // ---------- Conflict merge (offline resolution) ----------
   function mergePayload(localP, cloudP) {
     const out = { meta: { updatedAt: Date.now(), deviceId }, data: [] };
     const byKey = new Map();
@@ -234,7 +256,9 @@ document.addEventListener("DOMContentLoaded", () => {
     await cloudSave(currentUser.uid, merged);
   }
 
-  // ---------- Habit streak ----------
+  // ---------- Habit streak (cached) ----------
+  let streakCache = new Map(); // taskName -> streak
+
   function computeStreakForTaskName(taskName) {
     const statusByDate = new Map();
     for (const mo of data) {
@@ -260,6 +284,13 @@ document.addEventListener("DOMContentLoaded", () => {
       } else break;
     }
     return streak;
+  }
+
+  function buildStreakCache() {
+    streakCache = new Map();
+    const names = new Set();
+    data.forEach((mo) => mo?.tasks?.forEach((t) => names.add(t.name)));
+    names.forEach((name) => streakCache.set(name, computeStreakForTaskName(name)));
   }
 
   // ---------- Rendering ----------
@@ -293,6 +324,7 @@ document.addEventListener("DOMContentLoaded", () => {
     daySelect.value = String(selectedDay);
   }
 
+  // Render table once; clicks update DOM directly (fast)
   function renderTable(md, days) {
     if (!tableContainer) return;
 
@@ -308,7 +340,7 @@ document.addEventListener("DOMContentLoaded", () => {
       for (let d = 1; d <= days; d++) {
         const v = cellValue(t.checklist?.[d]);
         const cls = v === "✔" ? "done" : v === "✖" ? "missed" : "";
-        html += `<td class="${cls}" data-t="${i}" data-d="${d}">${v}</td>`;
+        html += `<td id="cell-${i}-${d}" class="${cls}" data-t="${i}" data-d="${d}">${v}</td>`;
       }
       html += "</tr>";
     });
@@ -316,34 +348,48 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tbody></table>";
     tableContainer.innerHTML = html;
 
+    // Click to cycle value without full rerender
     tableContainer.querySelectorAll("td[data-t]").forEach((cell) => {
       cell.addEventListener("click", () => {
-        const t = Number(cell.dataset.t);
-        const d = Number(cell.dataset.d);
-        const cur = cellValue(md.tasks[t].checklist?.[d]);
+        const tIdx = Number(cell.dataset.t);
+        const day = Number(cell.dataset.d);
+
+        const cur = cellValue(md.tasks[tIdx].checklist?.[day]);
         const next = cur === "" ? "✔" : cur === "✔" ? "✖" : "";
-        setCell(md.tasks[t], d, next);
+
+        setCell(md.tasks[tIdx], day, next);
         md.updatedAt = Date.now();
-        saveLocal();
-        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
-        render();
+
+        // optimistic UI update
+        cell.textContent = next;
+        cell.classList.remove("done", "missed");
+        if (next === "✔") cell.classList.add("done");
+        if (next === "✖") cell.classList.add("missed");
+
+        updateProgress(md, days);
+        scheduleSaveLocal();
+        scheduleCloudSync();
       });
     });
 
+    // delete task (rerender is fine here)
     tableContainer.querySelectorAll(".del").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = Number(btn.dataset.i);
         if (!confirm("Delete this task?")) return;
+
         md.tasks.splice(idx, 1);
         md.updatedAt = Date.now();
-        saveLocal();
-        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
+
+        scheduleSaveLocal();
+        scheduleCloudSync();
         render();
       });
     });
   }
 
+  // Mobile cards update only their badge (fast)
   function renderMobileCards(md, y, m) {
     if (!mobileList) return;
     mobileList.innerHTML = "";
@@ -353,7 +399,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     md.tasks.forEach((t) => {
       const v = cellValue(t.checklist?.[day]);
-      const streak = computeStreakForTaskName(t.name);
+      const streak = streakCache.get(t.name) || 0;
 
       const card = document.createElement("div");
       card.className = "mobile-task";
@@ -390,37 +436,30 @@ document.addEventListener("DOMContentLoaded", () => {
       const btnDone = document.createElement("button");
       btnDone.textContent = "✔";
       btnDone.style.padding = "10px 14px";
-      btnDone.onclick = () => {
-        setCell(t, day, "✔");
-        md.updatedAt = Date.now();
-        saveLocal();
-        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
-        render();
-      };
 
       const btnMiss = document.createElement("button");
       btnMiss.textContent = "✖";
       btnMiss.style.padding = "10px 14px";
       btnMiss.style.background = "#ef4444";
-      btnMiss.onclick = () => {
-        setCell(t, day, "✖");
-        md.updatedAt = Date.now();
-        saveLocal();
-        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
-        render();
-      };
 
       const btnClear = document.createElement("button");
       btnClear.textContent = "—";
       btnClear.className = "secondary";
       btnClear.style.padding = "10px 14px";
-      btnClear.onclick = () => {
-        setCell(t, day, "");
+
+      const applyMobileUpdate = (value) => {
+        setCell(t, day, value);
         md.updatedAt = Date.now();
-        saveLocal();
-        if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
-        render();
+        badge.textContent = value;
+
+        updateProgress(md, dim);
+        scheduleSaveLocal();
+        scheduleCloudSync();
       };
+
+      btnDone.onclick = () => applyMobileUpdate("✔");
+      btnMiss.onclick = () => applyMobileUpdate("✖");
+      btnClear.onclick = () => applyMobileUpdate("");
 
       right.appendChild(badge);
       right.appendChild(btnDone);
@@ -435,9 +474,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderStreakSummary(md) {
     if (!streakText) return;
-    if (!md.tasks.length) { streakText.textContent = ""; return; }
+    if (!md.tasks.length) {
+      streakText.textContent = "";
+      return;
+    }
+
     const top = md.tasks
-      .map((t) => ({ name: t.name, streak: computeStreakForTaskName(t.name) }))
+      .map((t) => ({ name: t.name, streak: streakCache.get(t.name) || 0 }))
       .sort((a, b) => b.streak - a.streak)
       .slice(0, 3);
 
@@ -453,6 +496,9 @@ document.addEventListener("DOMContentLoaded", () => {
     migrateMonth(md, dim);
     populateDaySelect(y, m);
 
+    // build streak cache once per render (not per tap)
+    buildStreakCache();
+
     renderTable(md, dim);
     renderMobileCards(md, y, m);
 
@@ -467,7 +513,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (user) {
       currentUser = user;
       if (statusText) statusText.textContent = "Signed in as " + user.email;
-      try { await syncWithCloud(); } catch {}
+      try {
+        await syncWithCloud();
+      } catch {}
       render();
     } else {
       currentUser = null;
@@ -477,8 +525,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (loginBtn) {
     loginBtn.addEventListener("click", async () => {
-      try { await signInWithPopup(auth, provider); }
-      catch { await signInWithRedirect(auth, provider); }
+      try {
+        await signInWithPopup(auth, provider);
+      } catch {
+        await signInWithRedirect(auth, provider);
+      }
     });
   }
 
@@ -489,7 +540,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   window.addEventListener("online", () => {
-    if (currentUser) syncWithCloud().catch(() => {});
+    if (currentUser) scheduleCloudSync();
   });
 
   // ---------- UI ----------
@@ -504,14 +555,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const dim = daysInMonth(y, m);
 
       const checklist = {};
-      for (let d = 1; d <= dim; d++) checklist[d] = makeEmptyCell(); // ✅ correct init
+      for (let d = 1; d <= dim; d++) checklist[d] = makeEmptyCell();
 
       md.tasks.push({ name: input.value.trim(), checklist, updatedAt: Date.now() });
       md.updatedAt = Date.now();
       input.value = "";
 
-      saveLocal();
-      if (navigator.onLine && currentUser) syncWithCloud().catch(() => {});
+      // no full sync now; schedule it
+      scheduleSaveLocal();
+      scheduleCloudSync();
       render();
     });
   }
@@ -523,6 +575,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (daySelect) {
     daySelect.addEventListener("change", () => {
       selectedDay = Number(daySelect.value);
+      // only rerender cards/table because day changed
       render();
     });
   }
