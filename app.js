@@ -31,11 +31,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const daySelect = document.getElementById("daySelect");
   const todayBtn = document.getElementById("todayBtn");
 
+  const saveDayBtn = document.getElementById("saveDayBtn");
+  const saveHint = document.getElementById("saveHint");
+
   // ---------- State ----------
   const today = new Date();
   let currentUser = null;
 
-  // stable device id for conflict resolution tie-breaks
+  // stable device id
   const deviceIdKey = "taskTrackerDeviceId";
   const deviceId =
     localStorage.getItem(deviceIdKey) ||
@@ -48,7 +51,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // payload storage (meta + data)
   let localPayload = JSON.parse(localStorage.getItem("taskPayload")) || null;
 
-  // Backward compatibility: old builds may have taskData only
+  // Backward compatibility
   if (!localPayload) {
     const legacy = JSON.parse(localStorage.getItem("taskData")) || [];
     localPayload = { meta: { updatedAt: 0, deviceId }, data: legacy };
@@ -58,24 +61,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let data = Array.isArray(localPayload.data) ? localPayload.data : [];
   let selectedDay = today.getDate();
 
-  // ---------- Performance: debounced persistence/sync ----------
-  let saveTimer = null;
-  let syncTimer = null;
-
-  function scheduleSaveLocal() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      saveLocal();
-    }, 250);
-  }
-
-  function scheduleCloudSync() {
-    if (!currentUser) return;
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(() => {
-      if (navigator.onLine) syncWithCloud().catch(() => {});
-    }, 1500);
-  }
+  // Track which day(s) have unsaved edits (YYYY-MM-DD strings)
+  const dirtyDays = new Set();
 
   // ---------- Auto mobile view (remember choice) ----------
   const MOBILE_BREAKPOINT = 768;
@@ -102,7 +89,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const saved = localStorage.getItem(VIEW_KEY);
     if (!saved) {
       detectViewMode();
-      // no heavy full render on every resize; just repaint if mode flips
       render();
     }
   });
@@ -139,7 +125,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Date(y, m, 0).getDate();
   }
 
-  // Checklist cell: { v: "", "✔", "✖", t: epochMs, by: deviceId }
   function makeEmptyCell() {
     return { v: "", t: 0, by: "" };
   }
@@ -248,7 +233,6 @@ document.addEventListener("DOMContentLoaded", () => {
         : { meta: { updatedAt: 0, deviceId: "cloud" }, data: Array.isArray(cloudData) ? cloudData : [] };
 
     const merged = mergePayload(localPayload, cloudPayload);
-
     data = merged.data;
     localPayload = merged;
     saveLocal();
@@ -256,8 +240,8 @@ document.addEventListener("DOMContentLoaded", () => {
     await cloudSave(currentUser.uid, merged);
   }
 
-  // ---------- Habit streak (cached) ----------
-  let streakCache = new Map(); // taskName -> streak
+  // ---------- Habit streak (cached per render) ----------
+  let streakCache = new Map();
 
   function computeStreakForTaskName(taskName) {
     const statusByDate = new Map();
@@ -293,6 +277,23 @@ document.addEventListener("DOMContentLoaded", () => {
     names.forEach((name) => streakCache.set(name, computeStreakForTaskName(name)));
   }
 
+  // ---------- Save Day button state ----------
+  function currentContextDayKey() {
+    const y = Number(yearInput?.value || today.getFullYear());
+    const m = Number(monthSelect?.value || today.getMonth() + 1);
+    const dim = daysInMonth(y, m);
+    const d = Math.min(selectedDay, dim);
+    return isoDate(y, m, d);
+  }
+
+  function refreshSaveUI() {
+    if (!saveDayBtn) return;
+    const key = currentContextDayKey();
+    const isDirty = dirtyDays.has(key);
+    saveDayBtn.disabled = !isDirty;
+    if (saveHint) saveHint.textContent = isDirty ? "Unsaved changes" : "";
+  }
+
   // ---------- Rendering ----------
   function updateProgress(md, days) {
     let total = 0, done = 0;
@@ -324,8 +325,8 @@ document.addEventListener("DOMContentLoaded", () => {
     daySelect.value = String(selectedDay);
   }
 
-  // Render table once; clicks update DOM directly (fast)
-  function renderTable(md, days) {
+  // Table renders once; cell taps update DOM only (fast)
+  function renderTable(md, days, y, m) {
     if (!tableContainer) return;
 
     let html = "<table><thead><tr><th class='task-col'>Task</th>";
@@ -348,7 +349,6 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tbody></table>";
     tableContainer.innerHTML = html;
 
-    // Click to cycle value without full rerender
     tableContainer.querySelectorAll("td[data-t]").forEach((cell) => {
       cell.addEventListener("click", () => {
         const tIdx = Number(cell.dataset.t);
@@ -367,23 +367,25 @@ document.addEventListener("DOMContentLoaded", () => {
         if (next === "✖") cell.classList.add("missed");
 
         updateProgress(md, days);
-        scheduleSaveLocal();
-        scheduleCloudSync();
+
+        // mark that specific calendar day as dirty
+        dirtyDays.add(isoDate(y, m, day));
+        refreshSaveUI();
       });
     });
 
-    // delete task (rerender is fine here)
     tableContainer.querySelectorAll(".del").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = Number(btn.dataset.i);
         if (!confirm("Delete this task?")) return;
-
         md.tasks.splice(idx, 1);
         md.updatedAt = Date.now();
 
-        scheduleSaveLocal();
-        scheduleCloudSync();
+        // Deleting affects “today/selected day” state, so we consider current day dirty
+        dirtyDays.add(currentContextDayKey());
+        refreshSaveUI();
+
         render();
       });
     });
@@ -453,8 +455,9 @@ document.addEventListener("DOMContentLoaded", () => {
         badge.textContent = value;
 
         updateProgress(md, dim);
-        scheduleSaveLocal();
-        scheduleCloudSync();
+
+        dirtyDays.add(isoDate(y, m, day));
+        refreshSaveUI();
       };
 
       btnDone.onclick = () => applyMobileUpdate("✔");
@@ -496,14 +499,44 @@ document.addEventListener("DOMContentLoaded", () => {
     migrateMonth(md, dim);
     populateDaySelect(y, m);
 
-    // build streak cache once per render (not per tap)
     buildStreakCache();
 
-    renderTable(md, dim);
+    renderTable(md, dim, y, m);
     renderMobileCards(md, y, m);
 
     updateProgress(md, dim);
     renderStreakSummary(md);
+    refreshSaveUI();
+  }
+
+  // ---------- Save Day action ----------
+  async function saveDayNow() {
+    const key = currentContextDayKey();
+    if (!dirtyDays.has(key)) return;
+
+    // Persist locally once
+    saveLocal();
+
+    // Sync once (only if signed in + online)
+    if (currentUser && navigator.onLine) {
+      try {
+        await syncWithCloud();
+      } catch {
+        // if sync fails, keep dirty so user can retry
+        refreshSaveUI();
+        return;
+      }
+    }
+
+    // Clear dirty for that day after successful save (local always succeeds)
+    dirtyDays.delete(key);
+    refreshSaveUI();
+  }
+
+  if (saveDayBtn) {
+    saveDayBtn.addEventListener("click", () => {
+      saveDayNow();
+    });
   }
 
   // ---------- Auth ----------
@@ -539,9 +572,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  window.addEventListener("online", () => {
-    if (currentUser) scheduleCloudSync();
-  });
+  // Optional: when coming online, don’t auto-sync—user controls via Save Day
+  // window.addEventListener("online", () => {});
 
   // ---------- UI ----------
   if (addTaskBtn) {
@@ -561,9 +593,10 @@ document.addEventListener("DOMContentLoaded", () => {
       md.updatedAt = Date.now();
       input.value = "";
 
-      // no full sync now; schedule it
-      scheduleSaveLocal();
-      scheduleCloudSync();
+      // Adding a task affects the selected day’s “save”
+      dirtyDays.add(currentContextDayKey());
+      refreshSaveUI();
+
       render();
     });
   }
@@ -575,7 +608,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (daySelect) {
     daySelect.addEventListener("change", () => {
       selectedDay = Number(daySelect.value);
-      // only rerender cards/table because day changed
+      refreshSaveUI();
       render();
     });
   }
@@ -584,6 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
     todayBtn.addEventListener("click", () => {
       selectedDay = today.getDate();
       if (daySelect) daySelect.value = String(selectedDay);
+      refreshSaveUI();
       render();
     });
   }
