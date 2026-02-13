@@ -48,18 +48,49 @@ document.addEventListener("DOMContentLoaded", () => {
   // local storage payload (we keep meta)
   let localPayload = JSON.parse(localStorage.getItem("taskPayload")) || null;
 
-  // Backward compatibility: if they only had taskData stored before
+  // Backward compatibility
   if (!localPayload) {
     const legacy = JSON.parse(localStorage.getItem("taskData")) || [];
-    localPayload = {
-      meta: { updatedAt: 0, deviceId },
-      data: legacy
-    };
+    localPayload = { meta: { updatedAt: 0, deviceId }, data: legacy };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
   }
 
   let data = Array.isArray(localPayload.data) ? localPayload.data : [];
   let selectedDay = today.getDate(); // for mobile cards
+
+  // ---------- Auto mobile view (remember choice) ----------
+  const MOBILE_BREAKPOINT = 768;
+  const VIEW_KEY = "taskTrackerViewMode";
+
+  function applyViewMode(mode) {
+    if (mode === "mobile") document.body.classList.add("mobile-view");
+    else document.body.classList.remove("mobile-view");
+    localStorage.setItem(VIEW_KEY, mode);
+  }
+
+  function detectViewMode() {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (saved === "mobile" || saved === "desktop") {
+      applyViewMode(saved);
+      return;
+    }
+    applyViewMode(window.innerWidth <= MOBILE_BREAKPOINT ? "mobile" : "desktop");
+  }
+
+  detectViewMode();
+
+  window.addEventListener("resize", () => {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (!saved) detectViewMode();
+  });
+
+  if (viewToggle) {
+    viewToggle.addEventListener("click", () => {
+      const isMobile = document.body.classList.contains("mobile-view");
+      applyViewMode(isMobile ? "desktop" : "mobile");
+      render();
+    });
+  }
 
   // ---------- Month setup ----------
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -85,18 +116,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Date(y, m, 0).getDate();
   }
 
-  // Checklist cell format (for conflict resolution):
-  // { v: "", "✔", "✖", t: epochMs, by: deviceId }
+  // Checklist cell: { v: "", "✔", "✖", t: epochMs, by: deviceId }
   function normalizeCell(cell) {
     if (cell && typeof cell === "object" && "v" in cell && "t" in cell) return cell;
-    // legacy string -> convert with timestamp 0
     const v = typeof cell === "string" ? cell : "";
     return { v, t: 0, by: "" };
   }
 
   function cellValue(cell) {
-    const c = normalizeCell(cell);
-    return c.v || "";
+    return normalizeCell(cell).v || "";
   }
 
   function setCell(task, day, v) {
@@ -108,13 +136,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function saveLocal() {
     const now = Date.now();
-    localPayload = {
-      meta: { updatedAt: now, deviceId },
-      data
-    };
+    localPayload = { meta: { updatedAt: now, deviceId }, data };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
-    // keep legacy key updated (optional) so old builds still work
-    localStorage.setItem("taskData", JSON.stringify(data));
+    localStorage.setItem("taskData", JSON.stringify(data)); // legacy
   }
 
   function getMonthData(y, m) {
@@ -128,7 +152,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function migrateMonth(md, days) {
-    // convert legacy checklist string -> object
     md.tasks.forEach((t) => {
       if (!t.checklist) t.checklist = {};
       for (let d = 1; d <= days; d++) {
@@ -137,19 +160,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // ---------- Conflict merge ----------
   function mergePayload(localP, cloudP) {
-    // Both payload shapes: { meta:{updatedAt,deviceId}, data:[...] }
-    // Merge strategy: for each month->task name->day: pick cell with higher timestamp
-    // If same timestamp, prefer cloud (or deterministic tie-breaker)
-    const out = {
-      meta: { updatedAt: Date.now(), deviceId },
-      data: []
-    };
+    const out = { meta: { updatedAt: Date.now(), deviceId }, data: [] };
 
-    const byKey = new Map(); // key = `${year}-${month}`
-    const addMonth = (monthObj) => {
-      const key = `${monthObj.year}-${monthObj.month}`;
-      if (!byKey.has(key)) byKey.set(key, { year: monthObj.year, month: monthObj.month, tasks: [], updatedAt: 0 });
+    const byKey = new Map(); // `${year}-${month}` -> monthObj
+    const addMonth = (mo) => {
+      const key = `${mo.year}-${mo.month}`;
+      if (!byKey.has(key)) byKey.set(key, { year: mo.year, month: mo.month, tasks: [], updatedAt: 0 });
       return byKey.get(key);
     };
 
@@ -162,15 +180,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const taskMap = new Map(md.tasks.map((t) => [t.name, t]));
         const srcTasks = Array.isArray(mo.tasks) ? mo.tasks : [];
+
         for (const st of srcTasks) {
           if (!st?.name) continue;
-          if (!taskMap.has(st.name)) {
-            taskMap.set(st.name, {
-              name: st.name,
-              checklist: {},
-              updatedAt: st.updatedAt || 0
-            });
-          }
+          if (!taskMap.has(st.name)) taskMap.set(st.name, { name: st.name, checklist: {}, updatedAt: st.updatedAt || 0 });
+
           const dt = taskMap.get(st.name);
           dt.updatedAt = Math.max(dt.updatedAt || 0, st.updatedAt || 0);
 
@@ -179,15 +193,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const day = Number(k);
             const incoming = normalizeCell(srcChecklist[day]);
             const existing = normalizeCell(dt.checklist?.[day]);
-            // pick newer
-            if (incoming.t > existing.t) {
-              dt.checklist[day] = incoming;
-            } else if (incoming.t === existing.t) {
-              // deterministic tie-breaker: prefer non-empty, else keep existing
+
+            if (incoming.t > existing.t) dt.checklist[day] = incoming;
+            else if (incoming.t === existing.t) {
               if ((incoming.v || "") && !(existing.v || "")) dt.checklist[day] = incoming;
             }
           }
         }
+
         md.tasks = Array.from(taskMap.values());
       }
     };
@@ -195,20 +208,19 @@ document.addEventListener("DOMContentLoaded", () => {
     ingest(localP);
     ingest(cloudP);
 
-    out.data = Array.from(byKey.values())
-      .sort((a, b) => (a.year - b.year) || (a.month - b.month));
-
+    out.data = Array.from(byKey.values()).sort((a, b) => (a.year - b.year) || (a.month - b.month));
     return out;
   }
 
   async function syncWithCloud() {
     if (!currentUser) return;
 
-    // Load cloud, merge, then save merged
-    const cloudData = await cloudLoad(currentUser.uid); // may be legacy array or payload depending on your firebase.js
-    const cloudPayload = cloudData?.data
-      ? cloudData
-      : { meta: { updatedAt: 0, deviceId: "cloud" }, data: Array.isArray(cloudData) ? cloudData : [] };
+    const cloudData = await cloudLoad(currentUser.uid);
+
+    const cloudPayload =
+      cloudData && typeof cloudData === "object" && !Array.isArray(cloudData) && "data" in cloudData
+        ? cloudData
+        : { meta: { updatedAt: 0, deviceId: "cloud" }, data: Array.isArray(cloudData) ? cloudData : [] };
 
     const merged = mergePayload(localPayload, cloudPayload);
 
@@ -216,14 +228,11 @@ document.addEventListener("DOMContentLoaded", () => {
     localPayload = merged;
     saveLocal();
 
-    // Save merged payload (best). If your firebase.js stores just arrays, adjust there later.
     await cloudSave(currentUser.uid, merged);
   }
 
-  // ---------- Habit streak (across months by task name) ----------
-  // Streak = consecutive days ending today where status is ✔ for that task name
+  // ---------- Habit streak ----------
   function computeStreakForTaskName(taskName) {
-    // Build a set of dates -> status by scanning all months
     const statusByDate = new Map(); // iso -> "✔"/"✖"/""
     for (const mo of data) {
       if (!mo?.tasks) continue;
@@ -238,26 +247,19 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Walk backwards from today
     let streak = 0;
     const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     while (true) {
-      const y = cursor.getFullYear();
-      const m = cursor.getMonth() + 1;
-      const d = cursor.getDate();
-      const key = isoDate(y, m, d);
-      const v = statusByDate.get(key) || "";
-      if (v === "✔") {
+      const key = isoDate(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate());
+      if (statusByDate.get(key) === "✔") {
         streak++;
         cursor.setDate(cursor.getDate() - 1);
-        continue;
-      }
-      break;
+      } else break;
     }
     return streak;
   }
 
-  // ---------- Rendering ----------
+  // ---------- Rendering helpers ----------
   function updateProgress(md, days) {
     let total = 0, done = 0;
     md.tasks.forEach((t) => {
@@ -269,7 +271,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     });
-
     const pct = total === 0 ? 0 : Math.round((done / total) * 100);
     if (progressText) progressText.innerText = `Completed ${done} of ${total} — ${pct}%`;
     if (progressBar) progressBar.style.width = pct + "%";
@@ -291,6 +292,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderTable(md, days) {
     if (!tableContainer) return;
+
     let html = "<table><thead><tr><th class='task-col'>Task</th>";
     for (let d = 1; d <= days; d++) html += `<th>${d}</th>`;
     html += "</tr></thead><tbody>";
@@ -346,7 +348,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const dim = daysInMonth(y, m);
     const day = Math.min(selectedDay, dim);
 
-    md.tasks.forEach((t, i) => {
+    md.tasks.forEach((t) => {
       const v = cellValue(t.checklist?.[day]);
       const streak = computeStreakForTaskName(t.name);
 
@@ -360,6 +362,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const title = document.createElement("div");
       title.style.fontWeight = "700";
+      title.style.fontSize = "16px";
       title.textContent = t.name;
 
       const meta = document.createElement("div");
@@ -374,6 +377,12 @@ document.addEventListener("DOMContentLoaded", () => {
       right.style.display = "flex";
       right.style.gap = "8px";
       right.style.alignItems = "center";
+
+      const badge = document.createElement("div");
+      badge.style.minWidth = "34px";
+      badge.style.textAlign = "center";
+      badge.style.fontWeight = "700";
+      badge.textContent = v || "";
 
       const btnDone = document.createElement("button");
       btnDone.textContent = "✔";
@@ -410,12 +419,6 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
       };
 
-      const badge = document.createElement("div");
-      badge.style.minWidth = "34px";
-      badge.style.textAlign = "center";
-      badge.style.fontWeight = "700";
-      badge.textContent = v || "";
-
       right.appendChild(badge);
       right.appendChild(btnDone);
       right.appendChild(btnMiss);
@@ -423,7 +426,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       card.appendChild(left);
       card.appendChild(right);
-
       mobileList.appendChild(card);
     });
   }
@@ -434,14 +436,12 @@ document.addEventListener("DOMContentLoaded", () => {
       streakText.textContent = "";
       return;
     }
-    // show top 3 streaks
     const top = md.tasks
       .map((t) => ({ name: t.name, streak: computeStreakForTaskName(t.name) }))
       .sort((a, b) => b.streak - a.streak)
       .slice(0, 3);
 
-    streakText.textContent =
-      "Top streaks: " + top.map((x) => `${x.name} (${x.streak})`).join(" • ");
+    streakText.textContent = "Top streaks: " + top.map((x) => `${x.name} (${x.streak})`).join(" • ");
   }
 
   function render() {
@@ -462,16 +462,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Auth ----------
   getRedirectResult(auth).catch(() => {});
+
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser = user;
       if (statusText) statusText.textContent = "Signed in as " + user.email;
-
-      // Merge cloud/local at login for conflict resolution
-      try {
-        await syncWithCloud();
-      } catch {}
-
+      try { await syncWithCloud(); } catch {}
       render();
     } else {
       currentUser = null;
@@ -479,14 +475,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Login (popup first, redirect fallback)
   if (loginBtn) {
     loginBtn.addEventListener("click", async () => {
-      try {
-        await signInWithPopup(auth, provider);
-      } catch {
-        await signInWithRedirect(auth, provider);
-      }
+      try { await signInWithPopup(auth, provider); }
+      catch { await signInWithRedirect(auth, provider); }
     });
   }
 
@@ -496,18 +488,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------- Offline: auto-sync on reconnect ----------
   window.addEventListener("online", () => {
     if (currentUser) syncWithCloud().catch(() => {});
   });
 
   // ---------- UI ----------
-  if (viewToggle) {
-    viewToggle.addEventListener("click", () => {
-      document.body.classList.toggle("mobile-view");
-    });
-  }
-
   if (addTaskBtn) addTaskBtn.addEventListener("click", () => {
     const input = document.getElementById("taskInput");
     if (!input || !input.value.trim()) return;
