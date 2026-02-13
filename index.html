@@ -1,107 +1,117 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Monthly Task Tracker</title>
+  <meta charset="UTF-8" />
+  <title>Monthly Task Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#22c55e" />
 
-<link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#22c55e" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system;
+      margin: 0;
+      background: #f3f4f6;
+    }
 
-<style>
-body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont;
-  background: #f3f4f6;
-  margin: 0;
-  padding: 10px;
-  display: flex;
-  justify-content: center;
-}
+    .app {
+      max-width: 1200px;
+      margin: auto;
+      padding: 16px;
+    }
 
-.app {
-  width: 100%;
-  max-width: 1000px;
-  background: white;
-  border-radius: 20px;
-  padding: 15px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-  overflow: hidden;
-}
+    h1 {
+      text-align: center;
+    }
 
-.controls {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
 
-input, select, button {
-  padding: 8px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
-  font-size: 14px;
-}
+    input, select, button {
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      font-size: 14px;
+    }
 
-button {
-  background: #22c55e;
-  color: white;
-  border: none;
-  cursor: pointer;
-}
+    button {
+      background: #22c55e;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
 
-button.danger { background: #ef4444; }
+    button.secondary {
+      background: #6b7280;
+    }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
+    button.danger {
+      background: #ef4444;
+    }
 
-th, td {
-  border: 1px solid #ddd;
-  padding: 4px;
-  font-size: 11px;
-  text-align: center;
-}
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+    }
 
-th { background: #e5e7eb; }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 4px;
+      text-align: center;
+    }
 
-.task-col { width: 160px; text-align: left; }
+    .task-col {
+      text-align: left;
+      min-width: 140px;
+    }
 
-.done { background: #dcfce7; }
-.missed { background: #fee2e2; }
-.future { opacity: 0.4; }
+    .done { background: #dcfce7; }
+    .missed { background: #fee2e2; }
 
-.mobile-view table { display: none; }
-.mobile-list { display: none; }
-.mobile-view .mobile-list { display: block; }
+    /* MOBILE MODE */
+    body.mobile-view table { display: none; }
 
-.mobile-task {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px;
-  border-bottom: 1px solid #ddd;
-}
+    .mobile-list { display: none; }
+    body.mobile-view .mobile-list { display: block; }
 
-@media (max-width: 600px) {
-  .controls { flex-direction: column; }
-  td, th { font-size: 9px; padding: 3px; }
-  .task-col { width: 100px; }
-}
-</style>
+    .mobile-task {
+      background: white;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status {
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+  </style>
 </head>
 <body>
 
 <div class="app">
-  <h2>Monthly Task Tracker</h2>
+  <h1>Monthly Task Tracker</h1>
+
+  <div class="status" id="statusText">Not signed in</div>
+
+  <div class="controls">
+    <button id="loginBtn">Sign In</button>
+    <button id="logoutBtn" class="secondary">Logout</button>
+    <button id="viewToggle" class="secondary">Toggle View</button>
+  </div>
 
   <div class="controls">
     <select id="monthSelect"></select>
     <input id="yearInput" type="number" />
     <button id="generateMonthBtn">Generate</button>
-    <button id="viewToggle">🖥 / 📱</button>
-    <button id="loginBtn">☁️ Sign In</button>
-    <button id="syncBtn">🔄 Sync</button>
   </div>
 
   <div class="controls">
@@ -110,8 +120,8 @@ th { background: #e5e7eb; }
   </div>
 
   <div id="progressText"></div>
-  <div style="background:#eee;border-radius:10px;height:12px;margin-bottom:10px;">
-    <div id="progressBar" style="height:12px;width:0%;background:#22c55e;border-radius:10px;"></div>
+  <div style="background:#e5e7eb;height:10px;border-radius:8px;">
+    <div id="progressBar" style="height:10px;width:0%;background:#22c55e;border-radius:8px;"></div>
   </div>
 
   <div id="tableContainer"></div>
