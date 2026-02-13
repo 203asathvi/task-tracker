@@ -1,4 +1,5 @@
 import { auth, provider, cloudSave, cloudLoad } from "./firebase.js";
+import { signInWithRedirect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
   signInWithPopup,
   onAuthStateChanged,
@@ -117,7 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("loginBtn").onclick=()=>{
-    signInWithPopup(auth,provider);
+    signInWithRedirect(auth, provider);
   };
 
   document.getElementById("logoutBtn").onclick=()=>{
