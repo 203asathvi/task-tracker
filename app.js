@@ -1,6 +1,7 @@
 import { auth, provider, cloudSave, cloudLoad } from "./firebase.js";
 
 import {
+  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   onAuthStateChanged,
@@ -24,19 +25,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const debugBox = document.getElementById("debugBox");
 
-  // ---------- Debug helpers (mobile-visible) ----------
+  // ---------- Debug helpers ----------
   const dbg = (msg) => {
     const text = typeof msg === "string" ? msg : JSON.stringify(msg, null, 2);
     console.log(text);
     if (debugBox) debugBox.textContent = text;
   };
 
-  window.addEventListener("error", (e) => {
-    dbg("JS error:\n" + (e?.message || e));
-  });
-  window.addEventListener("unhandledrejection", (e) => {
-    dbg("Promise error:\n" + (e?.reason?.message || e?.reason || e));
-  });
+  window.addEventListener("error", (e) => dbg("JS error:\n" + (e?.message || e)));
+  window.addEventListener("unhandledrejection", (e) =>
+    dbg("Promise error:\n" + (e?.reason?.message || e?.reason || e))
+  );
 
   dbg("App loaded.\nUA=" + navigator.userAgent);
 
@@ -125,9 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const md = getMonthData(y, m);
 
     if (!md.tasks[taskIndex]) return;
-
-    const ok = confirm("Delete this task?");
-    if (!ok) return;
+    if (!confirm("Delete this task?")) return;
 
     md.tasks.splice(taskIndex, 1);
 
@@ -150,9 +147,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-
     if (progressText) progressText.innerText = `Completed ${done} of ${total} — ${pct}%`;
     if (progressBar) progressBar.style.width = pct + "%";
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
   function render() {
@@ -168,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tr></thead><tbody>";
 
     md.tasks.forEach((t, i) => {
-      html += `<tr>`;
+      html += "<tr>";
       html += `<td class="task-col">${escapeHtml(t.name)}
         <button class="danger del" data-i="${i}" style="margin-left:6px;">✕</button>
       </td>`;
@@ -178,22 +183,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const cls = val === "✔" ? "done" : val === "✖" ? "missed" : "";
         html += `<td class="${cls}" data-t="${i}" data-d="${d}">${val}</td>`;
       }
-      html += `</tr>`;
+      html += "</tr>";
     });
 
     html += "</tbody></table>";
     tableContainer.innerHTML = html;
 
-    // bind cell clicks
     tableContainer.querySelectorAll("td[data-t]").forEach((cell) => {
       cell.addEventListener("click", () => {
-        const t = Number(cell.dataset.t);
-        const d = Number(cell.dataset.d);
-        toggleCheck(t, d);
+        toggleCheck(Number(cell.dataset.t), Number(cell.dataset.d));
       });
     });
 
-    // bind delete
     tableContainer.querySelectorAll(".del").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -204,16 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateProgress(md, days);
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  // ---------- AUTH: redirect result (mobile visible) ----------
+  // ---------- AUTH: redirect result ----------
   getRedirectResult(auth)
     .then((result) => {
       if (result?.user) {
@@ -252,14 +244,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // ---------- Buttons ----------
+  // ---------- Login: try popup, fallback to redirect ----------
   if (loginBtn) {
     loginBtn.addEventListener("click", async () => {
       try {
-        dbg("Login clicked -> signInWithRedirect starting...");
-        await signInWithRedirect(auth, provider);
-      } catch (err) {
-        dbg("signInWithRedirect FAILED:\n" + (err?.code || "") + "\n" + (err?.message || err));
+        dbg("Login clicked -> trying POPUP...");
+        const res = await signInWithPopup(auth, provider);
+        dbg("Popup success: " + res.user.email);
+      } catch (e) {
+        dbg("Popup failed:\n" + (e?.code || "") + "\n" + (e?.message || e) + "\n\nTrying REDIRECT...");
+        try {
+          await signInWithRedirect(auth, provider);
+        } catch (e2) {
+          dbg("Redirect failed:\n" + (e2?.code || "") + "\n" + (e2?.message || e2));
+        }
       }
     });
   }
