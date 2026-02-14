@@ -8,142 +8,191 @@
   <meta name="theme-color" content="#22c55e" />
 
   <style>
+    /* ===== Calm theme ===== */
     body {
       font-family: system-ui, -apple-system;
       margin: 0;
-      background: #f3f4f6;
+      background: #f7f9f8;     /* subtle */
+      color: #334155;          /* calm slate */
     }
 
     .app {
       max-width: 1200px;
       margin: auto;
-      padding: 16px;
+      padding: 20px;
     }
 
-    h1 { text-align: center; }
+    h1 {
+      text-align: center;
+      font-weight: 600;
+      color: #1f2937;
+      letter-spacing: 0.3px;
+    }
 
     .controls {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 10px;
+      gap: 10px;
+      margin-bottom: 12px;
       align-items: center;
     }
 
     input, select, button {
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px solid #ddd;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
       font-size: 14px;
+      background: #ffffff;
+      color: #334155;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #94a3b8;
+      box-shadow: 0 0 0 2px rgba(148,163,184,0.15);
     }
 
     button {
-      background: #22c55e;
+      background: #4ade80;     /* softer green */
       color: white;
       border: none;
       cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s ease, transform 0.1s ease;
     }
 
-    button.secondary { background: #6b7280; }
-    button.danger { background: #ef4444; }
+    button:hover { background: #34d399; }
+    button:active { transform: scale(0.98); }
+
+    button.secondary {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    button.secondary:hover { background: #cbd5e1; }
+
+    button.danger {
+      background: #f87171;     /* softer red */
+    }
+    button.danger:hover { background: #ef4444; }
+
+    .status {
+      font-size: 13px;
+      margin-bottom: 8px;
+      color: #64748b;
+    }
+
+    /* ===== Table ===== */
+    #tableContainer { overflow-x: auto; }
 
     table {
       width: 100%;
       font-size: 13px;
+      border-collapse: separate;
+      border-spacing: 0;
     }
 
     th, td {
-      border: 1px solid #ddd;
-      padding: 4px;
+      border: 1px solid #e2e8f0;
+      padding: 6px;
       text-align: center;
+      background: #ffffff;
     }
 
-    .task-col { text-align: left; min-width: 140px; }
-    .done { background: #dcfce7; }
-    .missed { background: #fee2e2; }
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f1f5f9;
+      font-weight: 600;
+      color: #475569;
+    }
 
-    .status { font-size: 13px; margin-bottom: 6px; }
-
-    /* Wrap table horizontally */
-    #tableContainer { overflow-x: auto; }
+    .task-col {
+      text-align: left;
+      min-width: 150px;
+      font-weight: 500;
+    }
 
     /* Sticky/pinned first column (Task) */
-    table { border-collapse: separate; border-spacing: 0; }
-
     th.task-col, td.task-col {
       position: sticky;
       left: 0;
-      background: white;
       z-index: 3;
-      box-shadow: 6px 0 8px rgba(0,0,0,0.04);
+      background: #ffffff;
+      box-shadow: 6px 0 8px rgba(0,0,0,0.03);
     }
 
-    /* Keep header above cells */
-    thead th { position: sticky; top: 0; z-index: 2; background: #e5e7eb; }
     thead th.task-col { z-index: 4; } /* top-left cell */
+
+    .done { background: #e6f7ef; }   /* pastel green */
+    .missed { background: #fdecec; } /* pastel red */
+
+    #progressBar {
+      transition: width 0.4s ease;
+      background: linear-gradient(90deg, #86efac, #4ade80);
+    }
 
     /* Hide table in mobile mode */
     body.mobile-view table { display: none; }
 
-    /* ===== MOBILE CARD EXPERIENCE ===== */
-
+    /* ===== Mobile day controls ===== */
     body.mobile-view #mobileDayControls { display: flex !important; }
 
     body.mobile-view #mobileDayControls {
       position: sticky;
       top: 0;
       z-index: 10;
-      background: white;
+      background: #ffffff;
       padding: 10px;
       border-radius: 14px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.05);
       margin: 12px 0;
     }
 
+    /* ===== Mobile cards ===== */
     #mobileList { display: none; }
 
     body.mobile-view #mobileList {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      margin-top: 12px;
+      gap: 14px;
+      margin-top: 14px;
     }
 
     .mobile-task {
-      background: white;
-      padding: 16px;
-      border-radius: 18px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+      background: #ffffff;
+      padding: 18px;
+      border-radius: 20px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.05);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      transition: transform 0.15s ease;
     }
 
-    .mobile-task:active {
-      transform: scale(0.98);
-      box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-    }
+    .mobile-task:active { transform: scale(0.985); }
 
     .mobile-task button {
       border-radius: 12px;
       border: none;
       font-size: 16px;
-      min-width: 42px;
-      min-height: 42px;
+      min-width: 44px;
+      min-height: 44px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: transform 0.1s ease;
     }
 
-    .mobile-task button.secondary {
-      background: #e5e7eb;
-      color: #111827;
+    /* ===== Today panel (calm) ===== */
+    #todayPanel {
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.05);
+      margin: 14px 0;
+      border: 1px solid #eef2f7;
     }
 
-    #progressBar { transition: width 0.4s ease; }
-
-    button { transition: background 0.2s ease, transform 0.1s ease; }
-    button:active { transform: scale(0.97); }
+    #todayMeta { color: #64748b; }
   </style>
 </head>
 
@@ -188,50 +237,44 @@
     </div>
 
     <div id="progressText"></div>
-    <div style="background:#e5e7eb;height:10px;border-radius:8px;">
-      <div id="progressBar" style="height:10px;width:0%;background:#22c55e;border-radius:8px;"></div>
+    <div style="background:#eef2f7;height:10px;border-radius:10px; overflow:hidden;">
+      <div id="progressBar" style="height:10px;width:0%;border-radius:10px;"></div>
     </div>
 
-    <div id="streakText" style="margin:10px 0; font-weight:600;"></div>
+    <div id="streakText" style="margin:10px 0; font-weight:600; color:#475569;"></div>
 
     <div class="controls" id="mobileDayControls" style="display:none;">
-      <label style="font-size:14px;">Day:</label>
+      <label style="font-size:14px; color:#475569;">Day:</label>
       <select id="daySelect"></select>
       <button id="todayBtn" class="secondary">Today</button>
     </div>
 
     <div id="mobileList"></div>
     <div id="tableContainer"></div>
-  </div>
 
-  <!-- ===== TODAY PANEL (quick daily tracker) ===== -->
-<div id="todayPanel" style="
-  background:#ffffff;
-  border-radius:16px;
-  padding:14px;
-  box-shadow:0 8px 22px rgba(0,0,0,0.06);
-  margin:14px 0;
-">
-  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-    <div>
-      <div style="font-weight:800; font-size:16px;">Today</div>
-      <div id="todayMeta" style="font-size:12px; opacity:.75;">—</div>
+    <!-- ===== TODAY PANEL (quick daily tracker) ===== -->
+    <div id="todayPanel">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <div style="font-weight:800; font-size:16px; color:#1f2937;">Today</div>
+          <div id="todayMeta" style="font-size:12px; opacity:.85;">—</div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span id="todayCount" style="font-weight:700; font-size:13px; color:#475569;">0/0 done</span>
+          <button id="todayRefreshBtn" class="secondary" type="button">↻</button>
+        </div>
+      </div>
+
+      <div id="todayList" style="margin-top:10px; display:flex; flex-direction:column; gap:10px;"></div>
+
+      <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="todayMarkAllDoneBtn" type="button">✔ Mark all done</button>
+        <button id="todayClearAllBtn" class="secondary" type="button">Clear all</button>
+      </div>
     </div>
-
-    <div style="display:flex; align-items:center; gap:8px;">
-      <span id="todayCount" style="font-weight:700; font-size:13px;">0/0 done</span>
-      <button id="todayRefreshBtn" class="secondary" type="button">↻</button>
-    </div>
+    <!-- ===== /TODAY PANEL ===== -->
   </div>
-
-  <div id="todayList" style="margin-top:10px; display:flex; flex-direction:column; gap:10px;"></div>
-
-  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
-    <button id="todayMarkAllDoneBtn" type="button">✔ Mark all done</button>
-    <button id="todayClearAllBtn" class="secondary" type="button">Clear all</button>
-  </div>
-</div>
-<!-- ===== /TODAY PANEL ===== -->
 
   <!-- Excel export dependency (SheetJS) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
