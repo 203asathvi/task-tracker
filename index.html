@@ -48,7 +48,6 @@
     button.danger { background: #ef4444; }
 
     table {
-      border-collapse: collapse;
       width: 100%;
       font-size: 13px;
     }
@@ -65,12 +64,12 @@
 
     .status { font-size: 13px; margin-bottom: 6px; }
 
-    /* Wrap table horizontally (recommended) */
+    /* Wrap table horizontally */
     #tableContainer { overflow-x: auto; }
-    
+
     /* Sticky/pinned first column (Task) */
     table { border-collapse: separate; border-spacing: 0; }
-    
+
     th.task-col, td.task-col {
       position: sticky;
       left: 0;
@@ -81,17 +80,15 @@
 
     /* Keep header above cells */
     thead th { position: sticky; top: 0; z-index: 2; background: #e5e7eb; }
-    thead th.task-col { z-index: 4; } /* top-left cell on top */
-        
+    thead th.task-col { z-index: 4; } /* top-left cell */
+
     /* Hide table in mobile mode */
     body.mobile-view table { display: none; }
 
     /* ===== MOBILE CARD EXPERIENCE ===== */
 
-    /* Show mobile day controls only in mobile view */
     body.mobile-view #mobileDayControls { display: flex !important; }
 
-    /* Sticky top controls (day selector area) */
     body.mobile-view #mobileDayControls {
       position: sticky;
       top: 0;
@@ -103,7 +100,6 @@
       margin: 12px 0;
     }
 
-    /* Mobile list container */
     #mobileList { display: none; }
 
     body.mobile-view #mobileList {
@@ -113,7 +109,6 @@
       margin-top: 12px;
     }
 
-    /* Card styling */
     .mobile-task {
       background: white;
       padding: 16px;
@@ -130,7 +125,6 @@
       box-shadow: 0 3px 8px rgba(0,0,0,0.08);
     }
 
-    /* Action buttons */
     .mobile-task button {
       border-radius: 12px;
       border: none;
@@ -141,13 +135,11 @@
       transition: all 0.15s ease;
     }
 
-    /* Clear button */
     .mobile-task button.secondary {
       background: #e5e7eb;
       color: #111827;
     }
 
-    /* Progress bar polish */
     #progressBar { transition: width 0.4s ease; }
 
     button { transition: background 0.2s ease, transform 0.1s ease; }
@@ -171,8 +163,23 @@
       <select id="monthSelect"></select>
       <input id="yearInput" type="number" />
       <button id="generateMonthBtn">Generate</button>
+
       <button id="saveDayBtn" class="secondary" disabled>💾 Save Day</button>
       <span id="saveHint" style="font-size:12px; opacity:.75;"></span>
+    </div>
+
+    <!-- Export / Import -->
+    <div class="controls">
+      <select id="exportFormat" class="secondary">
+        <option value="json">JSON</option>
+        <option value="csv">CSV</option>
+        <option value="xlsx">Excel (.xlsx)</option>
+      </select>
+
+      <button id="exportBtn" class="secondary">⬇ Export</button>
+
+      <button id="importBtn" class="secondary">⬆ Import (JSON)</button>
+      <input id="importFile" type="file" accept="application/json" style="display:none;" />
     </div>
 
     <div class="controls">
@@ -185,23 +192,21 @@
       <div id="progressBar" style="height:10px;width:0%;background:#22c55e;border-radius:8px;"></div>
     </div>
 
-    <!-- Streak summary -->
     <div id="streakText" style="margin:10px 0; font-weight:600;"></div>
 
-    <!-- Mobile day controls -->
     <div class="controls" id="mobileDayControls" style="display:none;">
       <label style="font-size:14px;">Day:</label>
       <select id="daySelect"></select>
       <button id="todayBtn" class="secondary">Today</button>
     </div>
 
-    <!-- Mobile cards -->
     <div id="mobileList"></div>
-
-    <!-- Desktop table -->
     <div id="tableContainer"></div>
   </div>
 
-  <script type="module" src="app.js?v=20260213a"></script>
+  <!-- Excel export dependency (SheetJS) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script type="module" src="app.js?v=20260214a"></script>
 </body>
 </html>
