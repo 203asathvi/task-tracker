@@ -917,4 +917,169 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   render();
+
+  // ===== TODAY PANEL HOOKS =====
+function renderTodayPanel() {
+  const todayList = document.getElementById("todayList");
+  const todayMeta = document.getElementById("todayMeta");
+  const todayCount = document.getElementById("todayCount");
+  if (!todayList || !todayMeta || !todayCount) return;
+
+  const y = Number(yearInput?.value || today.getFullYear());
+  const m = Number(monthSelect?.value || (today.getMonth() + 1));
+  const md = getMonthData(y, m);
+  const dim = daysInMonth(y, m);
+
+  migrateMonth(md, dim);
+
+  // today day within selected month
+  const d = Math.min(today.getDate(), dim);
+
+  const label = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  todayMeta.textContent = `Tracking: Day ${d} • ${label}`;
+
+  todayList.innerHTML = "";
+
+  let done = 0;
+  let total = md.tasks.length;
+
+  md.tasks.forEach((t) => {
+    const current = cellValue(t.checklist?.[d]);
+    if (current === "✔") done++;
+
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.justifyContent = "space-between";
+    row.style.gap = "10px";
+    row.style.padding = "10px";
+    row.style.border = "1px solid #e5e7eb";
+    row.style.borderRadius = "14px";
+
+    const left = document.createElement("div");
+    left.style.display = "flex";
+    left.style.flexDirection = "column";
+    left.style.gap = "3px";
+
+    const title = document.createElement("div");
+    title.textContent = t.name;
+    title.style.fontWeight = "700";
+    title.style.fontSize = "14px";
+
+    const status = document.createElement("div");
+    status.style.fontSize = "12px";
+    status.style.opacity = ".75";
+    status.textContent =
+      current === "✔" ? "Done today" :
+      current === "✖" ? "Missed today" :
+      "Not set";
+
+    left.appendChild(title);
+    left.appendChild(status);
+
+    const right = document.createElement("div");
+    right.style.display = "flex";
+    right.style.gap = "8px";
+    right.style.alignItems = "center";
+
+    const badge = document.createElement("div");
+    badge.textContent = current || "";
+    badge.style.minWidth = "30px";
+    badge.style.textAlign = "center";
+    badge.style.fontWeight = "800";
+    badge.style.fontSize = "16px";
+
+    const btnDone = document.createElement("button");
+    btnDone.type = "button";
+    btnDone.textContent = "✔";
+
+    const btnMiss = document.createElement("button");
+    btnMiss.type = "button";
+    btnMiss.textContent = "✖";
+    btnMiss.style.background = "#ef4444";
+
+    const btnClear = document.createElement("button");
+    btnClear.type = "button";
+    btnClear.textContent = "—";
+    btnClear.className = "secondary";
+
+    const apply = (val) => {
+      setCell(t, d, val);
+      md.updatedAt = Date.now();
+
+      // mark dirty for today
+      dirtyDays.add(isoDate(y, m, d));
+      refreshSaveUI();
+      resetAutoSaveCountdown();
+
+      // update main UI + today UI
+      render();
+      renderTodayPanel();
+    };
+
+    btnDone.onclick = () => apply("✔");
+    btnMiss.onclick = () => apply("✖");
+    btnClear.onclick = () => apply("");
+
+    right.appendChild(badge);
+    right.appendChild(btnDone);
+    right.appendChild(btnMiss);
+    right.appendChild(btnClear);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    todayList.appendChild(row);
+  });
+
+  todayCount.textContent = `${done}/${total} done`;
+}
+
+// expose for manual refresh button (optional)
+window.renderTodayPanel = renderTodayPanel;
+
+document.getElementById("todayRefreshBtn")?.addEventListener("click", () => {
+  renderTodayPanel();
+});
+
+document.getElementById("todayMarkAllDoneBtn")?.addEventListener("click", () => {
+  const y = Number(yearInput?.value || today.getFullYear());
+  const m = Number(monthSelect?.value || (today.getMonth() + 1));
+  const md = getMonthData(y, m);
+  const dim = daysInMonth(y, m);
+  migrateMonth(md, dim);
+
+  const d = Math.min(today.getDate(), dim);
+  md.tasks.forEach((t) => setCell(t, d, "✔"));
+  md.updatedAt = Date.now();
+
+  dirtyDays.add(isoDate(y, m, d));
+  refreshSaveUI();
+  resetAutoSaveCountdown();
+
+  render();
+  renderTodayPanel();
+});
+
+document.getElementById("todayClearAllBtn")?.addEventListener("click", () => {
+  const y = Number(yearInput?.value || today.getFullYear());
+  const m = Number(monthSelect?.value || (today.getMonth() + 1));
+  const md = getMonthData(y, m);
+  const dim = daysInMonth(y, m);
+  migrateMonth(md, dim);
+
+  const d = Math.min(today.getDate(), dim);
+  md.tasks.forEach((t) => setCell(t, d, ""));
+  md.updatedAt = Date.now();
+
+  dirtyDays.add(isoDate(y, m, d));
+  refreshSaveUI();
+  resetAutoSaveCountdown();
+
+  render();
+  renderTodayPanel();
+});
+
+// call once after first render
+renderTodayPanel();
+// ===== /TODAY PANEL HOOKS =====
 });
