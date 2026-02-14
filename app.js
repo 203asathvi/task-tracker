@@ -34,6 +34,51 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveDayBtn = document.getElementById("saveDayBtn");
   const saveHint = document.getElementById("saveHint");
 
+  const exportFormat = document.getElementById("exportFormat");
+  const exportBtn = document.getElementById("exportBtn");
+  const importBtn = document.getElementById("importBtn");
+  const importFile = document.getElementById("importFile");
+
+  // ---------- Toast ----------
+  function showToast(message, type = "success") {
+    const toast = document.createElement("div");
+    toast.textContent = message;
+
+    toast.style.position = "fixed";
+    toast.style.left = "50%";
+    toast.style.bottom = "18px";
+    toast.style.transform = "translateX(-50%)";
+    toast.style.padding = "10px 14px";
+    toast.style.borderRadius = "12px";
+    toast.style.color = "white";
+    toast.style.fontSize = "14px";
+    toast.style.fontWeight = "600";
+    toast.style.boxShadow = "0 10px 25px rgba(0,0,0,0.18)";
+    toast.style.zIndex = "9999";
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 160ms ease, transform 160ms ease";
+
+    const bg =
+      type === "success" ? "#16a34a" :
+      type === "error" ? "#dc2626" :
+      type === "info" ? "#2563eb" :
+      "#111827";
+
+    toast.style.background = bg;
+    document.body.appendChild(toast);
+
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translateX(-50%) translateY(-2px)";
+    });
+
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateX(-50%) translateY(8px)";
+      setTimeout(() => toast.remove(), 220);
+    }, 1600);
+  }
+
   // ---------- State ----------
   const today = new Date();
   let currentUser = null;
@@ -63,6 +108,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Track which day(s) have unsaved edits (YYYY-MM-DD strings)
   const dirtyDays = new Set();
+
+  // Auto-save after 5 minutes (from last change)
+  let autoSaveTimer = null;
+  const AUTO_SAVE_MS = 5 * 60 * 1000;
 
   // ---------- Auto mobile view (remember choice) ----------
   const MOBILE_BREAKPOINT = 768;
@@ -146,11 +195,49 @@ document.addEventListener("DOMContentLoaded", () => {
     task.updatedAt = now;
   }
 
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
   function saveLocal() {
     const now = Date.now();
     localPayload = { meta: { updatedAt: now, deviceId }, data };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
     localStorage.setItem("taskData", JSON.stringify(data)); // legacy mirror
+  }
+
+  function resetAutoSaveCountdown() {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+
+    autoSaveTimer = setTimeout(async () => {
+      autoSaveTimer = null;
+      if (dirtyDays.size === 0) return;
+
+      // Save locally always
+      saveLocal();
+
+      // Try cloud if signed in + online
+      if (currentUser && navigator.onLine) {
+        try {
+          await syncWithCloud();
+          dirtyDays.clear();
+          refreshSaveUI();
+          showToast("Auto-saved ✅", "success");
+        } catch {
+          refreshSaveUI();
+          showToast("Auto-saved locally (cloud failed)", "error");
+        }
+      } else {
+        dirtyDays.clear();
+        refreshSaveUI();
+        showToast("Auto-saved locally ✅", "info");
+      }
+    }, AUTO_SAVE_MS);
   }
 
   function getMonthData(y, m) {
@@ -334,7 +421,7 @@ document.addEventListener("DOMContentLoaded", () => {
     html += "</tr></thead><tbody>";
 
     md.tasks.forEach((t, i) => {
-      html += `<tr><td class="task-col">${t.name}
+      html += `<tr><td class="task-col">${escapeHtml(t.name)}
         <button class="danger del" data-i="${i}" style="margin-left:6px;">✕</button>
       </td>`;
 
@@ -368,9 +455,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         updateProgress(md, days);
 
-        // mark that specific calendar day as dirty
         dirtyDays.add(isoDate(y, m, day));
         refreshSaveUI();
+        resetAutoSaveCountdown();
       });
     });
 
@@ -379,12 +466,13 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
         const idx = Number(btn.dataset.i);
         if (!confirm("Delete this task?")) return;
+
         md.tasks.splice(idx, 1);
         md.updatedAt = Date.now();
 
-        // Deleting affects “today/selected day” state, so we consider current day dirty
         dirtyDays.add(currentContextDayKey());
         refreshSaveUI();
+        resetAutoSaveCountdown();
 
         render();
       });
@@ -458,6 +546,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         dirtyDays.add(isoDate(y, m, day));
         refreshSaveUI();
+        resetAutoSaveCountdown();
       };
 
       btnDone.onclick = () => applyMobileUpdate("✔");
@@ -522,20 +611,227 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         await syncWithCloud();
       } catch {
-        // if sync fails, keep dirty so user can retry
         refreshSaveUI();
+        showToast("Saved locally (cloud failed)", "error");
         return;
       }
     }
 
-    // Clear dirty for that day after successful save (local always succeeds)
     dirtyDays.delete(key);
     refreshSaveUI();
+    showToast("Saved ✅", "success");
   }
 
   if (saveDayBtn) {
     saveDayBtn.addEventListener("click", () => {
       saveDayNow();
+    });
+  }
+
+  // ---------- Export / Import ----------
+  function downloadBlob(filename, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function flattenRows() {
+    const rows = [];
+    for (const mo of data) {
+      const y = mo.year, m = mo.month;
+      const dim = daysInMonth(y, m);
+
+      for (const t of (mo.tasks || [])) {
+        for (let d = 1; d <= dim; d++) {
+          const cell = normalizeCell(t.checklist?.[d]);
+          rows.push({
+            year: y,
+            month: m,
+            monthName: months[m - 1],
+            day: d,
+            task: t.name,
+            status: cell.v || "",
+            updatedAt: cell.t || 0,
+            updatedBy: cell.by || ""
+          });
+        }
+      }
+    }
+    return rows;
+  }
+
+  function exportJson() {
+    const payload = { version: 1, exportedAt: new Date().toISOString(), taskPayload: localPayload };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    downloadBlob(`task-tracker-${new Date().toISOString().slice(0,10)}.json`, blob);
+  }
+
+  function exportCsv() {
+    const rows = flattenRows();
+    const headers = ["year","month","monthName","day","task","status","updatedAt","updatedBy"];
+    const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+    const csv =
+      headers.join(",") + "\n" +
+      rows.map(r => headers.map(h => esc(r[h])).join(",")).join("\n");
+
+    downloadBlob(
+      `task-tracker-${new Date().toISOString().slice(0,10)}.csv`,
+      new Blob([csv], { type: "text/csv;charset=utf-8" })
+    );
+  }
+
+  function exportXlsx() {
+    if (!window.XLSX) {
+      showToast("Excel export needs XLSX script", "error");
+      return;
+    }
+    const rows = flattenRows();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "TaskData");
+    XLSX.writeFile(wb, `task-tracker-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  function exportData() {
+    const fmt = (exportFormat?.value || "json").toLowerCase();
+    if (fmt === "csv") exportCsv();
+    else if (fmt === "xlsx") exportXlsx();
+    else exportJson();
+    showToast(`Exported ${fmt.toUpperCase()} ✅`, "info");
+  }
+
+  function sanitizeImportedPayload(parsed) {
+    if (!parsed) return null;
+    if (parsed.taskPayload && parsed.taskPayload.data) return parsed.taskPayload;
+    if (parsed.data && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed)) return { meta: { updatedAt: 0, deviceId: "import" }, data: parsed };
+    return null;
+  }
+
+  function makeUniqueName(base, existingNames) {
+    if (!existingNames.has(base)) return base;
+    let n = 2;
+    while (existingNames.has(`${base} (${n})`)) n++;
+    return `${base} (${n})`;
+  }
+
+  function promptDuplicateChoice(taskName) {
+    const replace = confirm(
+      `Duplicate task found: "${taskName}"\n\n` +
+      `OK = Replace existing with imported\n` +
+      `Cancel = More options`
+    );
+    if (replace) return "replace";
+
+    const both = confirm(
+      `Choose option for "${taskName}":\n\n` +
+      `OK = Keep BOTH (rename imported)\n` +
+      `Cancel = Keep EXISTING (skip imported)`
+    );
+    return both ? "both" : "keep";
+  }
+
+  function mergeImportPayload(importPayload) {
+    const incoming = Array.isArray(importPayload?.data) ? importPayload.data : [];
+    let added = 0, replaced = 0, kept = 0, both = 0;
+
+    const monthMap = new Map(data.map(mo => [`${mo.year}-${mo.month}`, mo]));
+
+    for (const imo of incoming) {
+      if (!imo || typeof imo !== "object" || !("year" in imo) || !("month" in imo)) continue;
+
+      const key = `${imo.year}-${imo.month}`;
+      let target = monthMap.get(key);
+
+      if (!target) {
+        data.push(imo);
+        monthMap.set(key, imo);
+        added += (imo.tasks || []).length;
+        continue;
+      }
+
+      if (!Array.isArray(target.tasks)) target.tasks = [];
+      const existingNames = new Set(target.tasks.map(t => t.name));
+
+      const dim = daysInMonth(imo.year, imo.month);
+
+      for (const it of (imo.tasks || [])) {
+        if (!it?.name) continue;
+
+        if (!it.checklist) it.checklist = {};
+        for (let d = 1; d <= dim; d++) it.checklist[d] = normalizeCell(it.checklist[d]);
+
+        if (!existingNames.has(it.name)) {
+          target.tasks.push(it);
+          existingNames.add(it.name);
+          added++;
+        } else {
+          const choice = promptDuplicateChoice(it.name);
+
+          if (choice === "replace") {
+            const idx = target.tasks.findIndex(t => t.name === it.name);
+            if (idx >= 0) target.tasks[idx] = it;
+            else target.tasks.push(it);
+            replaced++;
+          } else if (choice === "both") {
+            const newName = makeUniqueName(it.name, existingNames);
+            it.name = newName;
+            target.tasks.push(it);
+            existingNames.add(newName);
+            both++;
+          } else {
+            kept++;
+          }
+        }
+      }
+
+      target.updatedAt = Date.now();
+    }
+
+    return { added, replaced, kept, both };
+  }
+
+  async function handleImportFile(file) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const payload = sanitizeImportedPayload(parsed);
+
+      if (!payload) {
+        showToast("Invalid import file", "error");
+        return;
+      }
+
+      const stats = mergeImportPayload(payload);
+
+      dirtyDays.add(currentContextDayKey());
+      refreshSaveUI();
+      resetAutoSaveCountdown();
+
+      render();
+
+      showToast(
+        `Imported: +${stats.added}, replaced ${stats.replaced}, both ${stats.both}, kept ${stats.kept}`,
+        "info"
+      );
+    } catch {
+      showToast("Import failed", "error");
+    }
+  }
+
+  if (exportBtn) exportBtn.addEventListener("click", exportData);
+
+  if (importBtn && importFile) {
+    importBtn.addEventListener("click", () => importFile.click());
+    importFile.addEventListener("change", () => {
+      const file = importFile.files?.[0];
+      if (file) handleImportFile(file);
+      importFile.value = "";
     });
   }
 
@@ -569,11 +865,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
       await signOut(auth);
+      showToast("Logged out", "info");
     });
   }
-
-  // Optional: when coming online, don’t auto-sync—user controls via Save Day
-  // window.addEventListener("online", () => {});
 
   // ---------- UI ----------
   if (addTaskBtn) {
@@ -593,9 +887,9 @@ document.addEventListener("DOMContentLoaded", () => {
       md.updatedAt = Date.now();
       input.value = "";
 
-      // Adding a task affects the selected day’s “save”
       dirtyDays.add(currentContextDayKey());
       refreshSaveUI();
+      resetAutoSaveCountdown();
 
       render();
     });
