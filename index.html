@@ -204,6 +204,35 @@
     <div id="tableContainer"></div>
   </div>
 
+  <!-- ===== TODAY PANEL (quick daily tracker) ===== -->
+<div id="todayPanel" style="
+  background:#ffffff;
+  border-radius:16px;
+  padding:14px;
+  box-shadow:0 8px 22px rgba(0,0,0,0.06);
+  margin:14px 0;
+">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+    <div>
+      <div style="font-weight:800; font-size:16px;">Today</div>
+      <div id="todayMeta" style="font-size:12px; opacity:.75;">—</div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span id="todayCount" style="font-weight:700; font-size:13px;">0/0 done</span>
+      <button id="todayRefreshBtn" class="secondary" type="button">↻</button>
+    </div>
+  </div>
+
+  <div id="todayList" style="margin-top:10px; display:flex; flex-direction:column; gap:10px;"></div>
+
+  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+    <button id="todayMarkAllDoneBtn" type="button">✔ Mark all done</button>
+    <button id="todayClearAllBtn" class="secondary" type="button">Clear all</button>
+  </div>
+</div>
+<!-- ===== /TODAY PANEL ===== -->
+
   <!-- Excel export dependency (SheetJS) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
