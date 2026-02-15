@@ -39,6 +39,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
 
+  // Today log DOM
+  const todayInput = document.getElementById("todayInput");
+  const todayAddBtn = document.getElementById("todayAddBtn");
+  const todayCategory = document.getElementById("todayCategory");
+  const todayFilter = document.getElementById("todayFilter");
+  const todayBringForwardBtn = document.getElementById("todayBringForwardBtn");
+
   // ---------- Toast ----------
   function showToast(message, type = "success") {
     const toast = document.createElement("div");
@@ -93,15 +100,17 @@ document.addEventListener("DOMContentLoaded", () => {
       return id;
     })();
 
-  // payload storage (meta + data)
+  // payload storage (meta + data + todayLog)
   let localPayload = JSON.parse(localStorage.getItem("taskPayload")) || null;
 
   // Backward compatibility
   if (!localPayload) {
     const legacy = JSON.parse(localStorage.getItem("taskData")) || [];
-    localPayload = { meta: { updatedAt: 0, deviceId }, data: legacy };
+    localPayload = { meta: { updatedAt: 0, deviceId }, data: legacy, todayLog: {} };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
   }
+
+  localPayload.todayLog = localPayload.todayLog || {}; // ensure exists
 
   let data = Array.isArray(localPayload.data) ? localPayload.data : [];
   let selectedDay = today.getDate();
@@ -206,7 +215,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function saveLocal() {
     const now = Date.now();
-    localPayload = { meta: { updatedAt: now, deviceId }, data };
+    localPayload = {
+      meta: { updatedAt: now, deviceId },
+      data,
+      todayLog: localPayload?.todayLog || {}
+    };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
     localStorage.setItem("taskData", JSON.stringify(data)); // legacy mirror
   }
@@ -261,7 +274,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Conflict merge (offline resolution) ----------
   function mergePayload(localP, cloudP) {
-    const out = { meta: { updatedAt: Date.now(), deviceId }, data: [] };
+    const out = { meta: { updatedAt: Date.now(), deviceId }, data: [], todayLog: {} };
     const byKey = new Map();
 
     const addMonth = (mo) => {
@@ -304,9 +317,40 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
+    // merge month grid
     ingest(localP);
     ingest(cloudP);
     out.data = Array.from(byKey.values()).sort((a, b) => (a.year - b.year) || (a.month - b.month));
+
+    // merge todayLog
+    function mergeTodayLog(lp, cp) {
+      const outTL = {};
+      const A = lp?.todayLog || {};
+      const B = cp?.todayLog || {};
+      const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+
+      for (const k of keys) {
+        const la = A[k] || { updatedAt: 0, items: [] };
+        const lb = B[k] || { updatedAt: 0, items: [] };
+
+        const map = new Map();
+
+        for (const it of (la.items || [])) map.set(it.id, it);
+        for (const it of (lb.items || [])) {
+          const ex = map.get(it.id);
+          if (!ex || (it.updatedAt || 0) > (ex.updatedAt || 0)) map.set(it.id, it);
+        }
+
+        outTL[k] = {
+          updatedAt: Math.max(la.updatedAt || 0, lb.updatedAt || 0),
+          items: Array.from(map.values()).sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0))
+        };
+      }
+      return outTL;
+    }
+
+    out.todayLog = mergeTodayLog(localP, cloudP);
+
     return out;
   }
 
@@ -317,9 +361,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const cloudPayload =
       cloudData && typeof cloudData === "object" && !Array.isArray(cloudData) && "data" in cloudData
         ? cloudData
-        : { meta: { updatedAt: 0, deviceId: "cloud" }, data: Array.isArray(cloudData) ? cloudData : [] };
+        : { meta: { updatedAt: 0, deviceId: "cloud" }, data: Array.isArray(cloudData) ? cloudData : [], todayLog: {} };
 
     const merged = mergePayload(localPayload, cloudPayload);
+
     data = merged.data;
     localPayload = merged;
     saveLocal();
@@ -596,6 +641,9 @@ document.addEventListener("DOMContentLoaded", () => {
     updateProgress(md, dim);
     renderStreakSummary(md);
     refreshSaveUI();
+
+    // keep today log refreshed too
+    renderTodayPanel();
   }
 
   // ---------- Save Day action ----------
@@ -709,7 +757,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!parsed) return null;
     if (parsed.taskPayload && parsed.taskPayload.data) return parsed.taskPayload;
     if (parsed.data && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-    if (Array.isArray(parsed)) return { meta: { updatedAt: 0, deviceId: "import" }, data: parsed };
+    if (Array.isArray(parsed)) return { meta: { updatedAt: 0, deviceId: "import" }, data: parsed, todayLog: {} };
     return null;
   }
 
@@ -849,6 +897,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       currentUser = null;
       if (statusText) statusText.textContent = "Not signed in";
+      renderTodayPanel();
     }
   });
 
@@ -916,170 +965,389 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  render();
+  // ---------- TODAY LOG (one-offs) ----------
+  function todayKey() {
+    return isoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  }
 
-  // ===== TODAY PANEL HOOKS =====
-function renderTodayPanel() {
-  const todayList = document.getElementById("todayList");
-  const todayMeta = document.getElementById("todayMeta");
-  const todayCount = document.getElementById("todayCount");
-  if (!todayList || !todayMeta || !todayCount) return;
+  function yesterdayKey() {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    d.setDate(d.getDate() - 1);
+    return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
 
-  const y = Number(yearInput?.value || today.getFullYear());
-  const m = Number(monthSelect?.value || (today.getMonth() + 1));
-  const md = getMonthData(y, m);
-  const dim = daysInMonth(y, m);
+  function getTodayLogBucket(key) {
+    localPayload.todayLog = localPayload.todayLog || {};
+    if (!localPayload.todayLog[key]) {
+      localPayload.todayLog[key] = { updatedAt: 0, items: [] };
+    }
+    if (!Array.isArray(localPayload.todayLog[key].items)) localPayload.todayLog[key].items = [];
+    return localPayload.todayLog[key];
+  }
 
-  migrateMonth(md, dim);
+  function touchTodayLog(key) {
+    const bucket = getTodayLogBucket(key);
+    bucket.updatedAt = Date.now();
+  }
 
-  // today day within selected month
-  const d = Math.min(today.getDate(), dim);
-
-  const label = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-  todayMeta.textContent = `Tracking: Day ${d} • ${label}`;
-
-  todayList.innerHTML = "";
-
-  let done = 0;
-  let total = md.tasks.length;
-
-  md.tasks.forEach((t) => {
-    const current = cellValue(t.checklist?.[d]);
-    if (current === "✔") done++;
-
-    const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.alignItems = "center";
-    row.style.justifyContent = "space-between";
-    row.style.gap = "10px";
-    row.style.padding = "10px";
-    row.style.border = "1px solid #e5e7eb";
-    row.style.borderRadius = "14px";
-
-    const left = document.createElement("div");
-    left.style.display = "flex";
-    left.style.flexDirection = "column";
-    left.style.gap = "3px";
-
-    const title = document.createElement("div");
-    title.textContent = t.name;
-    title.style.fontWeight = "700";
-    title.style.fontSize = "14px";
-
-    const status = document.createElement("div");
-    status.style.fontSize = "12px";
-    status.style.opacity = ".75";
-    status.textContent =
-      current === "✔" ? "Done today" :
-      current === "✖" ? "Missed today" :
-      "Not set";
-
-    left.appendChild(title);
-    left.appendChild(status);
-
-    const right = document.createElement("div");
-    right.style.display = "flex";
-    right.style.gap = "8px";
-    right.style.alignItems = "center";
-
-    const badge = document.createElement("div");
-    badge.textContent = current || "";
-    badge.style.minWidth = "30px";
-    badge.style.textAlign = "center";
-    badge.style.fontWeight = "800";
-    badge.style.fontSize = "16px";
-
-    const btnDone = document.createElement("button");
-    btnDone.type = "button";
-    btnDone.textContent = "✔";
-
-    const btnMiss = document.createElement("button");
-    btnMiss.type = "button";
-    btnMiss.textContent = "✖";
-    btnMiss.style.background = "#ef4444";
-
-    const btnClear = document.createElement("button");
-    btnClear.type = "button";
-    btnClear.textContent = "—";
-    btnClear.className = "secondary";
-
-    const apply = (val) => {
-      setCell(t, d, val);
-      md.updatedAt = Date.now();
-
-      // mark dirty for today
-      dirtyDays.add(isoDate(y, m, d));
-      refreshSaveUI();
-      resetAutoSaveCountdown();
-
-      // update main UI + today UI
-      render();
-      renderTodayPanel();
+  function normalizeLogItem(it) {
+    if (!it || typeof it !== "object") return null;
+    return {
+      id: String(it.id || (crypto?.randomUUID?.() || String(Math.random()).slice(2))),
+      text: String(it.text || ""),
+      done: !!it.done,
+      category: String(it.category || "General"),
+      notes: String(it.notes || ""),
+      updatedAt: Number(it.updatedAt || 0),
+      by: String(it.by || "")
     };
+  }
 
-    btnDone.onclick = () => apply("✔");
-    btnMiss.onclick = () => apply("✖");
-    btnClear.onclick = () => apply("");
+  function uniqueSig(it) {
+    // used for de-dup when bringing forward
+    const t = (it.text || "").trim().toLowerCase();
+    const c = (it.category || "General").trim().toLowerCase();
+    const n = (it.notes || "").trim().toLowerCase();
+    return `${c}||${t}||${n}`;
+  }
 
-    right.appendChild(badge);
-    right.appendChild(btnDone);
-    right.appendChild(btnMiss);
-    right.appendChild(btnClear);
+  function rebuildTodayFilterOptions() {
+    if (!todayFilter) return;
 
-    row.appendChild(left);
-    row.appendChild(right);
-    todayList.appendChild(row);
+    const key = todayKey();
+    const bucket = getTodayLogBucket(key);
+
+    const cats = new Set(["ALL"]);
+    for (const it of bucket.items) cats.add(it.category || "General");
+
+    const current = todayFilter.value || "ALL";
+    todayFilter.innerHTML = "";
+    const ordered = Array.from(cats);
+    // Keep ALL first, rest alpha
+    const rest = ordered.filter(x => x !== "ALL").sort((a,b) => a.localeCompare(b));
+    const final = ["ALL", ...rest];
+
+    for (const c of final) {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c === "ALL" ? "All categories" : c;
+      todayFilter.appendChild(opt);
+    }
+    todayFilter.value = final.includes(current) ? current : "ALL";
+  }
+
+  async function maybeCloudSyncTodayLog() {
+    saveLocal();
+    if (currentUser && navigator.onLine) {
+      try {
+        await syncWithCloud();
+      } catch {
+        // keep local
+      }
+    }
+  }
+
+  function renderTodayPanel() {
+    const todayList = document.getElementById("todayList");
+    const todayMeta = document.getElementById("todayMeta");
+    const todayCount = document.getElementById("todayCount");
+    if (!todayList || !todayMeta || !todayCount) return;
+
+    const key = todayKey();
+    const bucket = getTodayLogBucket(key);
+
+    // normalize items just in case older payloads exist
+    bucket.items = (bucket.items || []).map(normalizeLogItem).filter(Boolean);
+
+    todayMeta.textContent = `One-offs for ${key}`;
+    rebuildTodayFilterOptions();
+
+    const filterVal = todayFilter?.value || "ALL";
+    const items = filterVal === "ALL"
+      ? bucket.items
+      : bucket.items.filter(x => (x.category || "General") === filterVal);
+
+    todayList.innerHTML = "";
+
+    let done = 0;
+    let total = bucket.items.length;
+    for (const it of bucket.items) if (it.done) done++;
+
+    // render rows
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "today-row";
+
+      const left = document.createElement("div");
+      left.className = "today-left";
+
+      const toggle = document.createElement("input");
+      toggle.type = "checkbox";
+      toggle.checked = !!item.done;
+
+      const content = document.createElement("div");
+      content.style.minWidth = "0";
+      content.style.flex = "1";
+
+      const topLine = document.createElement("div");
+      topLine.style.display = "flex";
+      topLine.style.alignItems = "center";
+      topLine.style.gap = "8px";
+      topLine.style.flexWrap = "wrap";
+
+      const title = document.createElement("div");
+      title.className = "today-title";
+      title.textContent = item.text || "";
+      title.style.opacity = item.done ? "0.6" : "1";
+      title.style.textDecoration = item.done ? "line-through" : "none";
+
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = item.category || "General";
+
+      topLine.appendChild(title);
+      topLine.appendChild(tag);
+
+      const notes = document.createElement("div");
+      notes.className = "today-notes";
+      notes.textContent = item.notes ? item.notes : "";
+      notes.style.display = item.notes ? "block" : "none";
+
+      const notesEditorWrap = document.createElement("div");
+      notesEditorWrap.style.display = "none";
+      notesEditorWrap.style.marginTop = "8px";
+
+      const notesEditor = document.createElement("textarea");
+      notesEditor.value = item.notes || "";
+      notesEditor.placeholder = "Notes (optional)…";
+      notesEditor.style.width = "100%";
+
+      const notesActions = document.createElement("div");
+      notesActions.style.display = "flex";
+      notesActions.style.gap = "8px";
+      notesActions.style.marginTop = "8px";
+      notesActions.style.justifyContent = "flex-end";
+
+      const btnSaveNotes = document.createElement("button");
+      btnSaveNotes.type = "button";
+      btnSaveNotes.className = "mini";
+      btnSaveNotes.textContent = "Save notes";
+
+      const btnCancelNotes = document.createElement("button");
+      btnCancelNotes.type = "button";
+      btnCancelNotes.className = "secondary mini";
+      btnCancelNotes.textContent = "Cancel";
+
+      notesActions.appendChild(btnCancelNotes);
+      notesActions.appendChild(btnSaveNotes);
+
+      notesEditorWrap.appendChild(notesEditor);
+      notesEditorWrap.appendChild(notesActions);
+
+      content.appendChild(topLine);
+      content.appendChild(notes);
+      content.appendChild(notesEditorWrap);
+
+      // right actions
+      const right = document.createElement("div");
+      right.className = "today-right";
+
+      const btnNotes = document.createElement("button");
+      btnNotes.type = "button";
+      btnNotes.className = "secondary mini";
+      btnNotes.textContent = item.notes ? "Edit notes" : "Add notes";
+
+      const btnDelete = document.createElement("button");
+      btnDelete.type = "button";
+      btnDelete.className = "danger mini";
+      btnDelete.textContent = "Delete";
+
+      right.appendChild(btnNotes);
+      right.appendChild(btnDelete);
+
+      // events
+      toggle.onchange = async () => {
+        item.done = toggle.checked;
+        item.updatedAt = Date.now();
+        item.by = deviceId;
+        touchTodayLog(key);
+        await maybeCloudSyncTodayLog();
+        renderTodayPanel();
+      };
+
+      btnDelete.onclick = async () => {
+        const idx = bucket.items.findIndex(x => x.id === item.id);
+        if (idx >= 0) bucket.items.splice(idx, 1);
+        touchTodayLog(key);
+        await maybeCloudSyncTodayLog();
+        renderTodayPanel();
+      };
+
+      btnNotes.onclick = () => {
+        notesEditor.value = item.notes || "";
+        notesEditorWrap.style.display = "block";
+        notes.style.display = "none";
+        btnNotes.disabled = true;
+        setTimeout(() => notesEditor.focus(), 0);
+      };
+
+      btnCancelNotes.onclick = () => {
+        notesEditorWrap.style.display = "none";
+        if (item.notes) notes.style.display = "block";
+        btnNotes.disabled = false;
+      };
+
+      btnSaveNotes.onclick = async () => {
+        item.notes = (notesEditor.value || "").trim();
+        item.updatedAt = Date.now();
+        item.by = deviceId;
+
+        touchTodayLog(key);
+        await maybeCloudSyncTodayLog();
+
+        notesEditorWrap.style.display = "none";
+        notes.textContent = item.notes;
+        notes.style.display = item.notes ? "block" : "none";
+        btnNotes.textContent = item.notes ? "Edit notes" : "Add notes";
+        btnNotes.disabled = false;
+
+        renderTodayPanel();
+      };
+
+      left.appendChild(toggle);
+      left.appendChild(content);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      todayList.appendChild(row);
+    }
+
+    todayCount.textContent = `${done}/${total} done`;
+  }
+
+  // add item
+  if (todayAddBtn) {
+    todayAddBtn.addEventListener("click", async () => {
+      if (!todayInput || !todayInput.value.trim()) return;
+
+      const key = todayKey();
+      const bucket = getTodayLogBucket(key);
+
+      const item = normalizeLogItem({
+        id: crypto?.randomUUID?.() || String(Math.random()).slice(2),
+        text: todayInput.value.trim(),
+        done: false,
+        category: todayCategory?.value || "General",
+        notes: "",
+        updatedAt: Date.now(),
+        by: deviceId
+      });
+
+      bucket.items.unshift(item);
+
+      todayInput.value = "";
+      touchTodayLog(key);
+      await maybeCloudSyncTodayLog();
+      renderTodayPanel();
+      showToast("Added to Today Log ✅", "success");
+    });
+  }
+
+  if (todayInput) {
+    todayInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") todayAddBtn?.click();
+    });
+  }
+
+  if (todayFilter) {
+    todayFilter.addEventListener("change", () => renderTodayPanel());
+  }
+
+  // bring forward unfinished from yesterday
+  if (todayBringForwardBtn) {
+    todayBringForwardBtn.addEventListener("click", async () => {
+      const yKey = yesterdayKey();
+      const tKey = todayKey();
+      const yBucket = getTodayLogBucket(yKey);
+      const tBucket = getTodayLogBucket(tKey);
+
+      // normalize
+      yBucket.items = (yBucket.items || []).map(normalizeLogItem).filter(Boolean);
+      tBucket.items = (tBucket.items || []).map(normalizeLogItem).filter(Boolean);
+
+      const unfinished = yBucket.items.filter(x => !x.done);
+
+      if (unfinished.length === 0) {
+        showToast("No unfinished items from yesterday", "info");
+        return;
+      }
+
+      const existingSigs = new Set(tBucket.items.map(uniqueSig));
+      let added = 0;
+
+      for (const it of unfinished) {
+        const sig = uniqueSig(it);
+        if (existingSigs.has(sig)) continue;
+
+        tBucket.items.unshift(normalizeLogItem({
+          id: crypto?.randomUUID?.() || String(Math.random()).slice(2),
+          text: it.text,
+          done: false,
+          category: it.category || "General",
+          notes: it.notes || "",
+          updatedAt: Date.now(),
+          by: deviceId
+        }));
+
+        existingSigs.add(sig);
+        added++;
+      }
+
+      if (added === 0) {
+        showToast("Nothing new to bring forward (already present)", "info");
+        return;
+      }
+
+      touchTodayLog(tKey);
+      await maybeCloudSyncTodayLog();
+      renderTodayPanel();
+      showToast(`Brought forward ${added} item${added === 1 ? "" : "s"} ✅`, "success");
+    });
+  }
+
+  // Clear done
+  document.getElementById("todayClearDoneBtn")?.addEventListener("click", async () => {
+    const key = todayKey();
+    const bucket = getTodayLogBucket(key);
+
+    bucket.items = (bucket.items || []).map(normalizeLogItem).filter(Boolean).filter(x => !x.done);
+
+    touchTodayLog(key);
+    await maybeCloudSyncTodayLog();
+    renderTodayPanel();
+    showToast("Cleared done items ✅", "info");
   });
 
-  todayCount.textContent = `${done}/${total} done`;
-}
+  // Clear all
+  document.getElementById("todayClearAllBtn")?.addEventListener("click", async () => {
+    if (!confirm("Clear all Today Log items?")) return;
 
-// expose for manual refresh button (optional)
-window.renderTodayPanel = renderTodayPanel;
+    const key = todayKey();
+    const bucket = getTodayLogBucket(key);
+    bucket.items = [];
 
-document.getElementById("todayRefreshBtn")?.addEventListener("click", () => {
-  renderTodayPanel();
-});
+    touchTodayLog(key);
+    await maybeCloudSyncTodayLog();
+    renderTodayPanel();
+    showToast("Cleared Today Log ✅", "info");
+  });
 
-document.getElementById("todayMarkAllDoneBtn")?.addEventListener("click", () => {
-  const y = Number(yearInput?.value || today.getFullYear());
-  const m = Number(monthSelect?.value || (today.getMonth() + 1));
-  const md = getMonthData(y, m);
-  const dim = daysInMonth(y, m);
-  migrateMonth(md, dim);
+  // Refresh
+  document.getElementById("todayRefreshBtn")?.addEventListener("click", () => {
+    renderTodayPanel();
+  });
 
-  const d = Math.min(today.getDate(), dim);
-  md.tasks.forEach((t) => setCell(t, d, "✔"));
-  md.updatedAt = Date.now();
-
-  dirtyDays.add(isoDate(y, m, d));
-  refreshSaveUI();
-  resetAutoSaveCountdown();
-
+  // ---------- Initial render ----------
   render();
   renderTodayPanel();
-});
-
-document.getElementById("todayClearAllBtn")?.addEventListener("click", () => {
-  const y = Number(yearInput?.value || today.getFullYear());
-  const m = Number(monthSelect?.value || (today.getMonth() + 1));
-  const md = getMonthData(y, m);
-  const dim = daysInMonth(y, m);
-  migrateMonth(md, dim);
-
-  const d = Math.min(today.getDate(), dim);
-  md.tasks.forEach((t) => setCell(t, d, ""));
-  md.updatedAt = Date.now();
-
-  dirtyDays.add(isoDate(y, m, d));
-  refreshSaveUI();
-  resetAutoSaveCountdown();
-
-  render();
-  renderTodayPanel();
-});
-
-// call once after first render
-renderTodayPanel();
-// ===== /TODAY PANEL HOOKS =====
 });
