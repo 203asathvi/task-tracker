@@ -13,7 +13,7 @@
       font-family: system-ui, -apple-system;
       margin: 0;
       color: #334155;
-    
+
       background:
         radial-gradient(circle at 10% 10%, rgba(59,130,246,0.08), transparent 40%),
         radial-gradient(circle at 90% 90%, rgba(16,185,129,0.10), transparent 40%),
@@ -21,13 +21,13 @@
     }
 
     .app {
-        max-width: 1200px;
-        margin: 30px auto;
-        padding: 24px;
-        background: rgba(255,255,255,0.7);
-        backdrop-filter: blur(8px);
-        border-radius: 24px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.06);
+      max-width: 1200px;
+      margin: 30px auto;
+      padding: 24px;
+      background: rgba(255,255,255,0.7);
+      backdrop-filter: blur(8px);
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.06);
     }
 
     h1 {
@@ -45,7 +45,7 @@
       align-items: center;
     }
 
-    input, select, button {
+    input, select, button, textarea {
       padding: 9px 12px;
       border-radius: 10px;
       border: 1px solid #e2e8f0;
@@ -54,7 +54,9 @@
       color: #334155;
     }
 
-    input:focus, select:focus {
+    textarea { min-height: 70px; resize: vertical; }
+
+    input:focus, select:focus, textarea:focus {
       outline: none;
       border-color: #94a3b8;
       box-shadow: 0 0 0 2px rgba(148,163,184,0.15);
@@ -190,7 +192,7 @@
       transition: transform 0.1s ease;
     }
 
-    /* ===== Today panel (calm) ===== */
+    /* ===== Today Log Panel ===== */
     #todayPanel {
       background: #ffffff;
       border-radius: 18px;
@@ -201,6 +203,68 @@
     }
 
     #todayMeta { color: #64748b; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #e2e8f0;
+      background: #f8fafc;
+      color: #475569;
+      white-space: nowrap;
+    }
+
+    .today-row {
+      background: rgba(255,255,255,0.95);
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 10px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .today-title {
+      font-weight: 700;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 520px;
+    }
+
+    .today-notes {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #64748b;
+      white-space: pre-wrap;
+    }
+
+    .today-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .today-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .mini {
+      font-size: 12px;
+      padding: 7px 10px;
+      border-radius: 10px;
+    }
   </style>
 </head>
 
@@ -260,11 +324,11 @@
     <div id="mobileList"></div>
     <div id="tableContainer"></div>
 
-    <!-- ===== TODAY PANEL (quick daily tracker) ===== -->
+    <!-- ===== TODAY LOG PANEL (one-off activities) ===== -->
     <div id="todayPanel">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
         <div>
-          <div style="font-weight:800; font-size:16px; color:#1f2937;">Today</div>
+          <div style="font-weight:800; font-size:16px; color:#1f2937;">Today Log</div>
           <div id="todayMeta" style="font-size:12px; opacity:.85;">—</div>
         </div>
 
@@ -274,19 +338,43 @@
         </div>
       </div>
 
+      <div class="controls" style="margin-top:12px;">
+        <input id="todayInput" placeholder="Add a one-off for today (e.g., built bench)..." style="flex:1; min-width:240px;" />
+        <select id="todayCategory">
+          <option value="General">General</option>
+          <option value="Home">Home</option>
+          <option value="Garden">Garden</option>
+          <option value="Work">Work</option>
+          <option value="Health">Health</option>
+          <option value="Fitness">Fitness</option>
+          <option value="Family">Family</option>
+          <option value="Learning">Learning</option>
+          <option value="Finance">Finance</option>
+        </select>
+        <button id="todayAddBtn" type="button">Add</button>
+      </div>
+
+      <div class="controls">
+        <select id="todayFilter" class="secondary">
+          <option value="ALL">All categories</option>
+        </select>
+
+        <button id="todayBringForwardBtn" class="secondary" type="button">↩ Bring forward unfinished</button>
+      </div>
+
       <div id="todayList" style="margin-top:10px; display:flex; flex-direction:column; gap:10px;"></div>
 
       <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button id="todayMarkAllDoneBtn" type="button">✔ Mark all done</button>
-        <button id="todayClearAllBtn" class="secondary" type="button">Clear all</button>
+        <button id="todayClearDoneBtn" class="secondary" type="button">Clear done</button>
+        <button id="todayClearAllBtn" class="danger" type="button">Clear all</button>
       </div>
     </div>
-    <!-- ===== /TODAY PANEL ===== -->
+    <!-- ===== /TODAY LOG PANEL ===== -->
   </div>
 
   <!-- Excel export dependency (SheetJS) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <script type="module" src="app.js?v=20260214a"></script>
+  <script type="module" src="app.js?v=20260215a"></script>
 </body>
 </html>
