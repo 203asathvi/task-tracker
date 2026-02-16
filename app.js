@@ -976,120 +976,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
   }
 
-  function addDaysToISO(iso, deltaDays) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + deltaDays);
-  return isoDate(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
-}
-
-function last7KeysEndingToday() {
-  const tKey = todayKey(); // YYYY-MM-DD
-  const keys = [];
-  for (let i = 6; i >= 0; i--) keys.push(addDaysToISO(tKey, -i));
-  return keys;
-}
-
-function renderWeeklyRollup() {
-  const rowsEl = document.getElementById("todayWeeklyRows");
-  const metaEl = document.getElementById("todayWeeklyMeta");
-  if (!rowsEl || !metaEl) return;
-
-  const keys = last7KeysEndingToday();
-
-  // Aggregate by category across last 7 days
-  const agg = new Map(); // cat -> { done, total }
-  let weekDone = 0;
-  let weekTotal = 0;
-
-  for (const k of keys) {
-    const bucket = getTodayLogBucket(k);
-    const items = (bucket.items || []).map(normalizeLogItem).filter(Boolean);
-
-    for (const it of items) {
-      const cat = it.category || "General";
-      if (!agg.has(cat)) agg.set(cat, { done: 0, total: 0 });
-      const a = agg.get(cat);
-      a.total++;
-      weekTotal++;
-      if (it.done) {
-        a.done++;
-        weekDone++;
-      }
-    }
-  }
-
-  const start = keys[0];
-  const end = keys[keys.length - 1];
-  const pct = weekTotal ? Math.round((weekDone / weekTotal) * 100) : 0;
-  metaEl.textContent = `${start} → ${end} • ${weekDone}/${weekTotal} done (${pct}%)`;
-
-  rowsEl.innerHTML = "";
-
-  if (weekTotal === 0) {
-    const empty = document.createElement("div");
-    empty.style.fontSize = "13px";
-    empty.style.color = "#64748b";
-    empty.textContent = "No Today Log entries in the last 7 days.";
-    rowsEl.appendChild(empty);
-    return;
-  }
-
-  // Sort categories by total desc, then name
-  const sorted = Array.from(agg.entries())
-    .map(([category, v]) => ({ category, ...v }))
-    .sort((a, b) => (b.total - a.total) || a.category.localeCompare(b.category));
-
-  for (const r of sorted) {
-    const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.alignItems = "center";
-    row.style.justifyContent = "space-between";
-    row.style.gap = "10px";
-    row.style.flexWrap = "wrap";
-
-    const left = document.createElement("div");
-    left.style.display = "flex";
-    left.style.alignItems = "center";
-    left.style.gap = "8px";
-
-    const tag = document.createElement("span");
-    tag.className = "tag";
-    tag.textContent = r.category;
-
-    const stat = document.createElement("div");
-    stat.style.fontSize = "13px";
-    stat.style.color = "#475569";
-    const rpct = r.total ? Math.round((r.done / r.total) * 100) : 0;
-    stat.textContent = `${r.done}/${r.total} done (${rpct}%)`;
-
-    left.appendChild(tag);
-    left.appendChild(stat);
-
-    // mini bar
-    const barWrap = document.createElement("div");
-    barWrap.style.flex = "1";
-    barWrap.style.minWidth = "180px";
-    barWrap.style.maxWidth = "360px";
-    barWrap.style.height = "10px";
-    barWrap.style.borderRadius = "999px";
-    barWrap.style.background = "#eef2f7";
-    barWrap.style.overflow = "hidden";
-
-    const bar = document.createElement("div");
-    bar.style.height = "10px";
-    bar.style.width = (r.total ? (r.done / r.total) * 100 : 0) + "%";
-    bar.style.background = "linear-gradient(90deg, #86efac, #4ade80)";
-
-    barWrap.appendChild(bar);
-
-    row.appendChild(left);
-    row.appendChild(barWrap);
-    rowsEl.appendChild(row);
-  }
-}
-  
-  
   function getTodayLogBucket(key) {
     localPayload.todayLog = localPayload.todayLog || {};
     if (!localPayload.todayLog[key]) {
@@ -1175,7 +1061,6 @@ function renderWeeklyRollup() {
 
     todayMeta.textContent = `One-offs for ${key}`;
     rebuildTodayFilterOptions();
-    renderWeeklyRollup(); 
 
     const filterVal = todayFilter?.value || "ALL";
     const items = filterVal === "ALL"
