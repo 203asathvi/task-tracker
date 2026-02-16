@@ -39,6 +39,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
 
+  // Profiles DOM
+  const profileSelect = document.getElementById("profileSelect");
+  const addProfileBtn = document.getElementById("addProfileBtn");
+  const renameProfileBtn = document.getElementById("renameProfileBtn");
+  const deleteProfileBtn = document.getElementById("deleteProfileBtn");
+
   // Today log DOM
   const todayInput = document.getElementById("todayInput");
   const todayAddBtn = document.getElementById("todayAddBtn");
@@ -100,22 +106,60 @@ document.addEventListener("DOMContentLoaded", () => {
       return id;
     })();
 
-  // payload storage (meta + data + todayLog)
+  // payload storage
   let localPayload = JSON.parse(localStorage.getItem("taskPayload")) || null;
 
-  // Backward compatibility
+  // Backward compatibility (older versions stored only taskData)
   if (!localPayload) {
     const legacy = JSON.parse(localStorage.getItem("taskData")) || [];
-    localPayload = { meta: { updatedAt: 0, deviceId }, data: legacy, todayLog: {} };
+    localPayload = {
+      meta: { updatedAt: 0, deviceId },
+      profiles: {
+        default: { name: "Me", updatedAt: 0, data: legacy, todayLog: {} }
+      },
+      activeProfileId: "default"
+    };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
   }
 
-  localPayload.todayLog = localPayload.todayLog || {}; // ensure exists
+  // If it was the earlier todayLog-only payload: {meta,data,todayLog}
+  if (localPayload && !localPayload.profiles) {
+    const legacyData = Array.isArray(localPayload.data) ? localPayload.data : [];
+    const legacyTodayLog = localPayload.todayLog || {};
+    localPayload = {
+      meta: localPayload.meta || { updatedAt: 0, deviceId },
+      profiles: {
+        default: { name: "Me", updatedAt: localPayload.meta?.updatedAt || 0, data: legacyData, todayLog: legacyTodayLog }
+      },
+      activeProfileId: "default"
+    };
+    localStorage.setItem("taskPayload", JSON.stringify(localPayload));
+  }
 
-  let data = Array.isArray(localPayload.data) ? localPayload.data : [];
+  localPayload.meta = localPayload.meta || { updatedAt: 0, deviceId };
+  localPayload.profiles = localPayload.profiles || { default: { name: "Me", updatedAt: 0, data: [], todayLog: {} } };
+  localPayload.activeProfileId = localPayload.activeProfileId || "default";
+
+  // active profile pointers
+  let activeProfileId = localPayload.activeProfileId;
+  function getActiveProfile() {
+    if (!localPayload.profiles[activeProfileId]) {
+      activeProfileId = Object.keys(localPayload.profiles)[0] || "default";
+      if (!localPayload.profiles[activeProfileId]) {
+        localPayload.profiles[activeProfileId] = { name: "Me", updatedAt: 0, data: [], todayLog: {} };
+      }
+      localPayload.activeProfileId = activeProfileId;
+    }
+    const p = localPayload.profiles[activeProfileId];
+    p.data = Array.isArray(p.data) ? p.data : [];
+    p.todayLog = p.todayLog || {};
+    p.updatedAt = Number(p.updatedAt || 0);
+    return p;
+  }
+
   let selectedDay = today.getDate();
 
-  // Track which day(s) have unsaved edits (YYYY-MM-DD strings)
+  // Track which day(s) have unsaved edits (YYYY-MM-DD strings) for the ACTIVE profile
   const dirtyDays = new Set();
 
   // Auto-save after 5 minutes (from last change)
@@ -213,15 +257,21 @@ document.addEventListener("DOMContentLoaded", () => {
       .replaceAll("'", "&#039;");
   }
 
+  function touchProfile() {
+    const p = getActiveProfile();
+    p.updatedAt = Date.now();
+    localPayload.meta.updatedAt = Date.now();
+  }
+
   function saveLocal() {
-    const now = Date.now();
-    localPayload = {
-      meta: { updatedAt: now, deviceId },
-      data,
-      todayLog: localPayload?.todayLog || {}
-    };
+    // persist activeProfileId + profiles + meta
+    localPayload.activeProfileId = activeProfileId;
+    localPayload.meta = { updatedAt: Date.now(), deviceId };
     localStorage.setItem("taskPayload", JSON.stringify(localPayload));
-    localStorage.setItem("taskData", JSON.stringify(data)); // legacy mirror
+
+    // legacy mirror for very old versions (store active profile only)
+    const p = getActiveProfile();
+    localStorage.setItem("taskData", JSON.stringify(p.data || []));
   }
 
   function resetAutoSaveCountdown() {
@@ -231,10 +281,8 @@ document.addEventListener("DOMContentLoaded", () => {
       autoSaveTimer = null;
       if (dirtyDays.size === 0) return;
 
-      // Save locally always
       saveLocal();
 
-      // Try cloud if signed in + online
       if (currentUser && navigator.onLine) {
         try {
           await syncWithCloud();
@@ -253,11 +301,146 @@ document.addEventListener("DOMContentLoaded", () => {
     }, AUTO_SAVE_MS);
   }
 
+  // ---------- Profiles UI ----------
+  function rebuildProfileSelect() {
+    if (!profileSelect) return;
+
+    const ids = Object.keys(localPayload.profiles || {});
+    if (ids.length === 0) {
+      localPayload.profiles = { default: { name: "Me", updatedAt: 0, data: [], todayLog: {} } };
+      activeProfileId = "default";
+      localPayload.activeProfileId = "default";
+    }
+
+    profileSelect.innerHTML = "";
+    for (const id of Object.keys(localPayload.profiles)) {
+      const p = localPayload.profiles[id];
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = p?.name || id;
+      profileSelect.appendChild(opt);
+    }
+    profileSelect.value = activeProfileId;
+  }
+
+  function slugifyName(name) {
+    return String(name || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "profile";
+  }
+
+  function makeUniqueProfileId(base) {
+    const existing = new Set(Object.keys(localPayload.profiles || {}));
+    if (!existing.has(base)) return base;
+    let n = 2;
+    while (existing.has(`${base}-${n}`)) n++;
+    return `${base}-${n}`;
+  }
+
+  function switchProfile(newId) {
+    if (!localPayload.profiles[newId]) return;
+
+    // save current first (best effort)
+    saveLocal();
+
+    activeProfileId = newId;
+    localPayload.activeProfileId = newId;
+
+    // clear dirty for safety on switch
+    dirtyDays.clear();
+    refreshSaveUI();
+
+    rebuildProfileSelect();
+    render();
+    renderTodayPanel();
+    showToast("Switched profile", "info");
+  }
+
+  if (profileSelect) {
+    rebuildProfileSelect();
+    profileSelect.addEventListener("change", () => {
+      const id = profileSelect.value;
+      switchProfile(id);
+    });
+  }
+
+  if (addProfileBtn) {
+    addProfileBtn.addEventListener("click", () => {
+      const name = prompt("Profile name (e.g., Alex):");
+      if (!name || !name.trim()) return;
+
+      const baseId = slugifyName(name);
+      const id = makeUniqueProfileId(baseId);
+
+      localPayload.profiles[id] = { name: name.trim(), updatedAt: Date.now(), data: [], todayLog: {} };
+      touchProfile();
+      saveLocal();
+
+      rebuildProfileSelect();
+      switchProfile(id);
+    });
+  }
+
+  if (renameProfileBtn) {
+    renameProfileBtn.addEventListener("click", () => {
+      const p = getActiveProfile();
+      const name = prompt("Rename profile:", p.name || "");
+      if (!name || !name.trim()) return;
+
+      p.name = name.trim();
+      p.updatedAt = Date.now();
+      touchProfile();
+      saveLocal();
+
+      rebuildProfileSelect();
+      render();
+      renderTodayPanel();
+      showToast("Renamed profile ✅", "success");
+    });
+  }
+
+  if (deleteProfileBtn) {
+    deleteProfileBtn.addEventListener("click", () => {
+      const ids = Object.keys(localPayload.profiles || {});
+      if (ids.length <= 1) {
+        showToast("You need at least 1 profile", "info");
+        return;
+      }
+
+      const p = getActiveProfile();
+      const ok = confirm(`Delete profile "${p.name || activeProfileId}"?\n\nThis will remove its data from this account.`);
+      if (!ok) return;
+
+      delete localPayload.profiles[activeProfileId];
+
+      const nextId = Object.keys(localPayload.profiles)[0];
+      activeProfileId = nextId;
+      localPayload.activeProfileId = nextId;
+
+      touchProfile();
+      saveLocal();
+
+      rebuildProfileSelect();
+      render();
+      renderTodayPanel();
+      showToast("Deleted profile", "info");
+    });
+  }
+
+  // ---------- Month data helpers (per active profile) ----------
+  function getProfileDataArray() {
+    return getActiveProfile().data;
+  }
+
   function getMonthData(y, m) {
+    const data = getProfileDataArray();
     let found = data.find((d) => d.year === y && d.month === m);
     if (!found) {
       found = { year: y, month: m, tasks: [], updatedAt: 0 };
       data.push(found);
+      touchProfile();
     }
     if (!Array.isArray(found.tasks)) found.tasks = [];
     return found;
@@ -272,9 +455,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------- Conflict merge (offline resolution) ----------
-  function mergePayload(localP, cloudP) {
-    const out = { meta: { updatedAt: Date.now(), deviceId }, data: [], todayLog: {} };
+  // ---------- Conflict merge helpers ----------
+  function mergeMonthData(localDataArr, cloudDataArr) {
+    const out = [];
     const byKey = new Map();
 
     const addMonth = (mo) => {
@@ -283,10 +466,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return byKey.get(key);
     };
 
-    const ingest = (payload) => {
-      const arr = Array.isArray(payload?.data) ? payload.data : [];
-      for (const mo of arr) {
+    const ingest = (arr) => {
+      const monthsArr = Array.isArray(arr) ? arr : [];
+      for (const mo of monthsArr) {
         if (!mo || typeof mo !== "object") continue;
+
         const md = addMonth(mo);
         md.updatedAt = Math.max(md.updatedAt || 0, mo.updatedAt || 0);
 
@@ -317,39 +501,120 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    // merge month grid
-    ingest(localP);
-    ingest(cloudP);
-    out.data = Array.from(byKey.values()).sort((a, b) => (a.year - b.year) || (a.month - b.month));
+    ingest(localDataArr);
+    ingest(cloudDataArr);
 
-    // merge todayLog
-    function mergeTodayLog(lp, cp) {
-      const outTL = {};
-      const A = lp?.todayLog || {};
-      const B = cp?.todayLog || {};
-      const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+    out.push(...Array.from(byKey.values()).sort((a, b) => (a.year - b.year) || (a.month - b.month)));
+    return out;
+  }
 
-      for (const k of keys) {
-        const la = A[k] || { updatedAt: 0, items: [] };
-        const lb = B[k] || { updatedAt: 0, items: [] };
+  function normalizeLogItem(it) {
+    if (!it || typeof it !== "object") return null;
+    return {
+      id: String(it.id || (crypto?.randomUUID?.() || String(Math.random()).slice(2))),
+      text: String(it.text || ""),
+      done: !!it.done,
+      category: String(it.category || "General"),
+      notes: String(it.notes || ""),
+      updatedAt: Number(it.updatedAt || 0),
+      by: String(it.by || "")
+    };
+  }
 
-        const map = new Map();
+  function mergeTodayLog(localTL, cloudTL) {
+    const outTL = {};
+    const A = localTL || {};
+    const B = cloudTL || {};
+    const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
 
-        for (const it of (la.items || [])) map.set(it.id, it);
-        for (const it of (lb.items || [])) {
-          const ex = map.get(it.id);
-          if (!ex || (it.updatedAt || 0) > (ex.updatedAt || 0)) map.set(it.id, it);
-        }
+    for (const k of keys) {
+      const la = A[k] || { updatedAt: 0, items: [] };
+      const lb = B[k] || { updatedAt: 0, items: [] };
 
-        outTL[k] = {
-          updatedAt: Math.max(la.updatedAt || 0, lb.updatedAt || 0),
-          items: Array.from(map.values()).sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0))
-        };
+      const map = new Map();
+
+      for (const it of (la.items || [])) {
+        const n = normalizeLogItem(it);
+        if (n) map.set(n.id, n);
       }
-      return outTL;
+      for (const it of (lb.items || [])) {
+        const n = normalizeLogItem(it);
+        if (!n) continue;
+        const ex = map.get(n.id);
+        if (!ex || (n.updatedAt || 0) > (ex.updatedAt || 0)) map.set(n.id, n);
+      }
+
+      outTL[k] = {
+        updatedAt: Math.max(la.updatedAt || 0, lb.updatedAt || 0),
+        items: Array.from(map.values()).sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0))
+      };
+    }
+    return outTL;
+  }
+
+  function mergeProfiles(localProfiles, cloudProfiles) {
+    const out = {};
+    const A = localProfiles || {};
+    const B = cloudProfiles || {};
+    const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+
+    for (const id of keys) {
+      const lp = A[id];
+      const cp = B[id];
+
+      // If one side missing, take the other
+      if (lp && !cp) {
+        out[id] = {
+          name: lp.name || id,
+          updatedAt: Number(lp.updatedAt || 0),
+          data: Array.isArray(lp.data) ? lp.data : [],
+          todayLog: lp.todayLog || {}
+        };
+        continue;
+      }
+      if (cp && !lp) {
+        out[id] = {
+          name: cp.name || id,
+          updatedAt: Number(cp.updatedAt || 0),
+          data: Array.isArray(cp.data) ? cp.data : [],
+          todayLog: cp.todayLog || {}
+        };
+        continue;
+      }
+
+      // Both exist: merge their data
+      const mergedData = mergeMonthData(lp.data, cp.data);
+      const mergedTL = mergeTodayLog(lp.todayLog, cp.todayLog);
+
+      const lpUpdated = Number(lp.updatedAt || 0);
+      const cpUpdated = Number(cp.updatedAt || 0);
+
+      out[id] = {
+        name: (cpUpdated > lpUpdated ? (cp.name || lp.name || id) : (lp.name || cp.name || id)),
+        updatedAt: Math.max(lpUpdated, cpUpdated, Date.now()),
+        data: mergedData,
+        todayLog: mergedTL
+      };
     }
 
-    out.todayLog = mergeTodayLog(localP, cloudP);
+    return out;
+  }
+
+  function mergePayload(localP, cloudP) {
+    const out = {
+      meta: { updatedAt: Date.now(), deviceId },
+      profiles: {},
+      activeProfileId: localP?.activeProfileId || cloudP?.activeProfileId || "default"
+    };
+
+    out.profiles = mergeProfiles(localP?.profiles, cloudP?.profiles);
+
+    // Ensure at least one profile
+    if (!out.profiles || Object.keys(out.profiles).length === 0) {
+      out.profiles = { default: { name: "Me", updatedAt: 0, data: [], todayLog: {} } };
+      out.activeProfileId = "default";
+    }
+    if (!out.profiles[out.activeProfileId]) out.activeProfileId = Object.keys(out.profiles)[0];
 
     return out;
   }
@@ -358,16 +623,35 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!currentUser) return;
 
     const cloudData = await cloudLoad(currentUser.uid);
+
+    // normalize cloud payload
     const cloudPayload =
-      cloudData && typeof cloudData === "object" && !Array.isArray(cloudData) && "data" in cloudData
+      cloudData && typeof cloudData === "object" && !Array.isArray(cloudData) && "profiles" in cloudData
         ? cloudData
-        : { meta: { updatedAt: 0, deviceId: "cloud" }, data: Array.isArray(cloudData) ? cloudData : [], todayLog: {} };
+        : (
+            cloudData && typeof cloudData === "object" && !Array.isArray(cloudData) && "data" in cloudData
+              ? {
+                  meta: cloudData.meta || { updatedAt: 0, deviceId: "cloud" },
+                  profiles: {
+                    default: { name: "Me", updatedAt: cloudData.meta?.updatedAt || 0, data: Array.isArray(cloudData.data) ? cloudData.data : [], todayLog: cloudData.todayLog || {} }
+                  },
+                  activeProfileId: "default"
+                }
+              : {
+                  meta: { updatedAt: 0, deviceId: "cloud" },
+                  profiles: { default: { name: "Me", updatedAt: 0, data: Array.isArray(cloudData) ? cloudData : [], todayLog: {} } },
+                  activeProfileId: "default"
+                }
+          );
 
     const merged = mergePayload(localPayload, cloudPayload);
 
-    data = merged.data;
     localPayload = merged;
+    activeProfileId = merged.activeProfileId;
+    localPayload.activeProfileId = activeProfileId;
+
     saveLocal();
+    rebuildProfileSelect();
 
     await cloudSave(currentUser.uid, merged);
   }
@@ -376,7 +660,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let streakCache = new Map();
 
   function computeStreakForTaskName(taskName) {
+    const data = getProfileDataArray();
     const statusByDate = new Map();
+
     for (const mo of data) {
       if (!mo?.tasks) continue;
       for (const t of mo.tasks) {
@@ -404,6 +690,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function buildStreakCache() {
     streakCache = new Map();
+    const data = getProfileDataArray();
     const names = new Set();
     data.forEach((mo) => mo?.tasks?.forEach((t) => names.add(t.name)));
     names.forEach((name) => streakCache.set(name, computeStreakForTaskName(name)));
@@ -457,7 +744,6 @@ document.addEventListener("DOMContentLoaded", () => {
     daySelect.value = String(selectedDay);
   }
 
-  // Table renders once; cell taps update DOM only (fast)
   function renderTable(md, days, y, m) {
     if (!tableContainer) return;
 
@@ -491,8 +777,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         setCell(md.tasks[tIdx], day, next);
         md.updatedAt = Date.now();
+        touchProfile();
 
-        // optimistic UI update
         cell.textContent = next;
         cell.classList.remove("done", "missed");
         if (next === "✔") cell.classList.add("done");
@@ -514,6 +800,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         md.tasks.splice(idx, 1);
         md.updatedAt = Date.now();
+        touchProfile();
 
         dirtyDays.add(currentContextDayKey());
         refreshSaveUI();
@@ -524,7 +811,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Mobile cards update only their badge (fast)
   function renderMobileCards(md, y, m) {
     if (!mobileList) return;
     mobileList.innerHTML = "";
@@ -585,6 +871,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const applyMobileUpdate = (value) => {
         setCell(t, day, value);
         md.updatedAt = Date.now();
+        touchProfile();
         badge.textContent = value;
 
         updateProgress(md, dim);
@@ -642,8 +929,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderStreakSummary(md);
     refreshSaveUI();
 
-    // keep today log refreshed too
-    renderTodayPanel();
+    rebuildProfileSelect();
   }
 
   // ---------- Save Day action ----------
@@ -651,10 +937,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const key = currentContextDayKey();
     if (!dirtyDays.has(key)) return;
 
-    // Persist locally once
     saveLocal();
 
-    // Sync once (only if signed in + online)
     if (currentUser && navigator.onLine) {
       try {
         await syncWithCloud();
@@ -671,9 +955,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (saveDayBtn) {
-    saveDayBtn.addEventListener("click", () => {
-      saveDayNow();
-    });
+    saveDayBtn.addEventListener("click", () => saveDayNow());
   }
 
   // ---------- Export / Import ----------
@@ -688,25 +970,33 @@ document.addEventListener("DOMContentLoaded", () => {
     URL.revokeObjectURL(url);
   }
 
-  function flattenRows() {
+  function flattenRowsAllProfiles() {
     const rows = [];
-    for (const mo of data) {
-      const y = mo.year, m = mo.month;
-      const dim = daysInMonth(y, m);
+    const profiles = localPayload.profiles || {};
 
-      for (const t of (mo.tasks || [])) {
-        for (let d = 1; d <= dim; d++) {
-          const cell = normalizeCell(t.checklist?.[d]);
-          rows.push({
-            year: y,
-            month: m,
-            monthName: months[m - 1],
-            day: d,
-            task: t.name,
-            status: cell.v || "",
-            updatedAt: cell.t || 0,
-            updatedBy: cell.by || ""
-          });
+    for (const [pid, prof] of Object.entries(profiles)) {
+      const pname = prof?.name || pid;
+      const dataArr = Array.isArray(prof?.data) ? prof.data : [];
+
+      for (const mo of dataArr) {
+        const y = mo.year, m = mo.month;
+        const dim = daysInMonth(y, m);
+
+        for (const t of (mo.tasks || [])) {
+          for (let d = 1; d <= dim; d++) {
+            const cell = normalizeCell(t.checklist?.[d]);
+            rows.push({
+              profile: pname,
+              year: y,
+              month: m,
+              monthName: months[m - 1],
+              day: d,
+              task: t.name,
+              status: cell.v || "",
+              updatedAt: cell.t || 0,
+              updatedBy: cell.by || ""
+            });
+          }
         }
       }
     }
@@ -714,14 +1004,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function exportJson() {
-    const payload = { version: 1, exportedAt: new Date().toISOString(), taskPayload: localPayload };
+    const payload = { version: 2, exportedAt: new Date().toISOString(), taskPayload: localPayload };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     downloadBlob(`task-tracker-${new Date().toISOString().slice(0,10)}.json`, blob);
   }
 
   function exportCsv() {
-    const rows = flattenRows();
-    const headers = ["year","month","monthName","day","task","status","updatedAt","updatedBy"];
+    const rows = flattenRowsAllProfiles();
+    const headers = ["profile","year","month","monthName","day","task","status","updatedAt","updatedBy"];
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const csv =
       headers.join(",") + "\n" +
@@ -738,7 +1028,7 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("Excel export needs XLSX script", "error");
       return;
     }
-    const rows = flattenRows();
+    const rows = flattenRowsAllProfiles();
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "TaskData");
@@ -755,93 +1045,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function sanitizeImportedPayload(parsed) {
     if (!parsed) return null;
-    if (parsed.taskPayload && parsed.taskPayload.data) return parsed.taskPayload;
-    if (parsed.data && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-    if (Array.isArray(parsed)) return { meta: { updatedAt: 0, deviceId: "import" }, data: parsed, todayLog: {} };
-    return null;
-  }
+    if (parsed.taskPayload) return parsed.taskPayload;
 
-  function makeUniqueName(base, existingNames) {
-    if (!existingNames.has(base)) return base;
-    let n = 2;
-    while (existingNames.has(`${base} (${n})`)) n++;
-    return `${base} (${n})`;
-  }
-
-  function promptDuplicateChoice(taskName) {
-    const replace = confirm(
-      `Duplicate task found: "${taskName}"\n\n` +
-      `OK = Replace existing with imported\n` +
-      `Cancel = More options`
-    );
-    if (replace) return "replace";
-
-    const both = confirm(
-      `Choose option for "${taskName}":\n\n` +
-      `OK = Keep BOTH (rename imported)\n` +
-      `Cancel = Keep EXISTING (skip imported)`
-    );
-    return both ? "both" : "keep";
-  }
-
-  function mergeImportPayload(importPayload) {
-    const incoming = Array.isArray(importPayload?.data) ? importPayload.data : [];
-    let added = 0, replaced = 0, kept = 0, both = 0;
-
-    const monthMap = new Map(data.map(mo => [`${mo.year}-${mo.month}`, mo]));
-
-    for (const imo of incoming) {
-      if (!imo || typeof imo !== "object" || !("year" in imo) || !("month" in imo)) continue;
-
-      const key = `${imo.year}-${imo.month}`;
-      let target = monthMap.get(key);
-
-      if (!target) {
-        data.push(imo);
-        monthMap.set(key, imo);
-        added += (imo.tasks || []).length;
-        continue;
-      }
-
-      if (!Array.isArray(target.tasks)) target.tasks = [];
-      const existingNames = new Set(target.tasks.map(t => t.name));
-
-      const dim = daysInMonth(imo.year, imo.month);
-
-      for (const it of (imo.tasks || [])) {
-        if (!it?.name) continue;
-
-        if (!it.checklist) it.checklist = {};
-        for (let d = 1; d <= dim; d++) it.checklist[d] = normalizeCell(it.checklist[d]);
-
-        if (!existingNames.has(it.name)) {
-          target.tasks.push(it);
-          existingNames.add(it.name);
-          added++;
-        } else {
-          const choice = promptDuplicateChoice(it.name);
-
-          if (choice === "replace") {
-            const idx = target.tasks.findIndex(t => t.name === it.name);
-            if (idx >= 0) target.tasks[idx] = it;
-            else target.tasks.push(it);
-            replaced++;
-          } else if (choice === "both") {
-            const newName = makeUniqueName(it.name, existingNames);
-            it.name = newName;
-            target.tasks.push(it);
-            existingNames.add(newName);
-            both++;
-          } else {
-            kept++;
-          }
-        }
-      }
-
-      target.updatedAt = Date.now();
+    // support raw payload structures
+    if (parsed.profiles) return parsed;
+    if (parsed.data) {
+      return {
+        meta: parsed.meta || { updatedAt: 0, deviceId: "import" },
+        profiles: { default: { name: "Me", updatedAt: parsed.meta?.updatedAt || 0, data: parsed.data, todayLog: parsed.todayLog || {} } },
+        activeProfileId: "default"
+      };
     }
-
-    return { added, replaced, kept, both };
+    if (Array.isArray(parsed)) {
+      return {
+        meta: { updatedAt: 0, deviceId: "import" },
+        profiles: { default: { name: "Me", updatedAt: 0, data: parsed, todayLog: {} } },
+        activeProfileId: "default"
+      };
+    }
+    return null;
   }
 
   async function handleImportFile(file) {
@@ -855,18 +1077,16 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const stats = mergeImportPayload(payload);
+      // Merge entire payload (profiles + tasks + todayLog)
+      localPayload = mergePayload(localPayload, payload);
+      activeProfileId = localPayload.activeProfileId;
 
-      dirtyDays.add(currentContextDayKey());
-      refreshSaveUI();
-      resetAutoSaveCountdown();
-
+      saveLocal();
+      rebuildProfileSelect();
       render();
+      renderTodayPanel();
 
-      showToast(
-        `Imported: +${stats.added}, replaced ${stats.replaced}, both ${stats.both}, kept ${stats.kept}`,
-        "info"
-      );
+      showToast("Imported ✅ (profiles merged)", "info");
     } catch {
       showToast("Import failed", "error");
     }
@@ -893,10 +1113,14 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         await syncWithCloud();
       } catch {}
+      rebuildProfileSelect();
       render();
+      renderTodayPanel();
     } else {
       currentUser = null;
       if (statusText) statusText.textContent = "Not signed in";
+      rebuildProfileSelect();
+      render();
       renderTodayPanel();
     }
   });
@@ -934,6 +1158,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       md.tasks.push({ name: input.value.trim(), checklist, updatedAt: Date.now() });
       md.updatedAt = Date.now();
+      touchProfile();
       input.value = "";
 
       dirtyDays.add(currentContextDayKey());
@@ -965,7 +1190,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------- TODAY LOG (one-offs) ----------
+  // ---------- TODAY LOG (per active profile) ----------
   function todayKey() {
     return isoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
   }
@@ -977,34 +1202,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getTodayLogBucket(key) {
-    localPayload.todayLog = localPayload.todayLog || {};
-    if (!localPayload.todayLog[key]) {
-      localPayload.todayLog[key] = { updatedAt: 0, items: [] };
-    }
-    if (!Array.isArray(localPayload.todayLog[key].items)) localPayload.todayLog[key].items = [];
-    return localPayload.todayLog[key];
+    const p = getActiveProfile();
+    p.todayLog = p.todayLog || {};
+    if (!p.todayLog[key]) p.todayLog[key] = { updatedAt: 0, items: [] };
+    if (!Array.isArray(p.todayLog[key].items)) p.todayLog[key].items = [];
+    return p.todayLog[key];
   }
 
   function touchTodayLog(key) {
     const bucket = getTodayLogBucket(key);
     bucket.updatedAt = Date.now();
-  }
-
-  function normalizeLogItem(it) {
-    if (!it || typeof it !== "object") return null;
-    return {
-      id: String(it.id || (crypto?.randomUUID?.() || String(Math.random()).slice(2))),
-      text: String(it.text || ""),
-      done: !!it.done,
-      category: String(it.category || "General"),
-      notes: String(it.notes || ""),
-      updatedAt: Number(it.updatedAt || 0),
-      by: String(it.by || "")
-    };
+    touchProfile();
   }
 
   function uniqueSig(it) {
-    // used for de-dup when bringing forward
     const t = (it.text || "").trim().toLowerCase();
     const c = (it.category || "General").trim().toLowerCase();
     const n = (it.notes || "").trim().toLowerCase();
@@ -1018,13 +1229,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const bucket = getTodayLogBucket(key);
 
     const cats = new Set(["ALL"]);
-    for (const it of bucket.items) cats.add(it.category || "General");
+    for (const it of bucket.items) cats.add((it.category || "General"));
 
     const current = todayFilter.value || "ALL";
     todayFilter.innerHTML = "";
-    const ordered = Array.from(cats);
-    // Keep ALL first, rest alpha
-    const rest = ordered.filter(x => x !== "ALL").sort((a,b) => a.localeCompare(b));
+    const rest = Array.from(cats).filter(x => x !== "ALL").sort((a,b) => a.localeCompare(b));
     const final = ["ALL", ...rest];
 
     for (const c of final) {
@@ -1047,6 +1256,115 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function addDaysToISO(iso, deltaDays) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + deltaDays);
+    return isoDate(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+  }
+
+  function last7KeysEndingToday() {
+    const tKey = todayKey();
+    const keys = [];
+    for (let i = 6; i >= 0; i--) keys.push(addDaysToISO(tKey, -i));
+    return keys;
+  }
+
+  function renderWeeklyRollup() {
+    const rowsEl = document.getElementById("todayWeeklyRows");
+    const metaEl = document.getElementById("todayWeeklyMeta");
+    if (!rowsEl || !metaEl) return;
+
+    const keys = last7KeysEndingToday();
+
+    const agg = new Map();
+    let weekDone = 0;
+    let weekTotal = 0;
+
+    for (const k of keys) {
+      const bucket = getTodayLogBucket(k);
+      const items = (bucket.items || []).map(normalizeLogItem).filter(Boolean);
+      for (const it of items) {
+        const cat = it.category || "General";
+        if (!agg.has(cat)) agg.set(cat, { done: 0, total: 0 });
+        const a = agg.get(cat);
+        a.total++;
+        weekTotal++;
+        if (it.done) {
+          a.done++;
+          weekDone++;
+        }
+      }
+    }
+
+    const start = keys[0];
+    const end = keys[keys.length - 1];
+    const pct = weekTotal ? Math.round((weekDone / weekTotal) * 100) : 0;
+    metaEl.textContent = `${start} → ${end} • ${weekDone}/${weekTotal} done (${pct}%)`;
+
+    rowsEl.innerHTML = "";
+
+    if (weekTotal === 0) {
+      const empty = document.createElement("div");
+      empty.style.fontSize = "13px";
+      empty.style.color = "#64748b";
+      empty.textContent = "No Today Log entries in the last 7 days.";
+      rowsEl.appendChild(empty);
+      return;
+    }
+
+    const sorted = Array.from(agg.entries())
+      .map(([category, v]) => ({ category, ...v }))
+      .sort((a, b) => (b.total - a.total) || a.category.localeCompare(b.category));
+
+    for (const r of sorted) {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.justifyContent = "space-between";
+      row.style.gap = "10px";
+      row.style.flexWrap = "wrap";
+
+      const left = document.createElement("div");
+      left.style.display = "flex";
+      left.style.alignItems = "center";
+      left.style.gap = "8px";
+
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = r.category;
+
+      const stat = document.createElement("div");
+      stat.style.fontSize = "13px";
+      stat.style.color = "#475569";
+      const rpct = r.total ? Math.round((r.done / r.total) * 100) : 0;
+      stat.textContent = `${r.done}/${r.total} done (${rpct}%)`;
+
+      left.appendChild(tag);
+      left.appendChild(stat);
+
+      const barWrap = document.createElement("div");
+      barWrap.style.flex = "1";
+      barWrap.style.minWidth = "180px";
+      barWrap.style.maxWidth = "360px";
+      barWrap.style.height = "10px";
+      barWrap.style.borderRadius = "999px";
+      barWrap.style.background = "#eef2f7";
+      barWrap.style.overflow = "hidden";
+
+      const bar = document.createElement("div");
+      bar.style.height = "10px";
+      bar.style.width = (r.total ? (r.done / r.total) * 100 : 0) + "%";
+      bar.style.background = "linear-gradient(90deg, #86efac, #4ade80)";
+
+      barWrap.appendChild(bar);
+
+      row.appendChild(left);
+      row.appendChild(barWrap);
+      rowsEl.appendChild(row);
+    }
+  }
+
   function renderTodayPanel() {
     const todayList = document.getElementById("todayList");
     const todayMeta = document.getElementById("todayMeta");
@@ -1056,11 +1374,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const key = todayKey();
     const bucket = getTodayLogBucket(key);
 
-    // normalize items just in case older payloads exist
     bucket.items = (bucket.items || []).map(normalizeLogItem).filter(Boolean);
 
-    todayMeta.textContent = `One-offs for ${key}`;
+    const p = getActiveProfile();
+    todayMeta.textContent = `One-offs for ${key} • Profile: ${p.name || activeProfileId}`;
+
     rebuildTodayFilterOptions();
+    renderWeeklyRollup();
 
     const filterVal = todayFilter?.value || "ALL";
     const items = filterVal === "ALL"
@@ -1073,7 +1393,6 @@ document.addEventListener("DOMContentLoaded", () => {
     let total = bucket.items.length;
     for (const it of bucket.items) if (it.done) done++;
 
-    // render rows
     for (const item of items) {
       const row = document.createElement("div");
       row.className = "today-row";
@@ -1148,7 +1467,6 @@ document.addEventListener("DOMContentLoaded", () => {
       content.appendChild(notes);
       content.appendChild(notesEditorWrap);
 
-      // right actions
       const right = document.createElement("div");
       right.className = "today-right";
 
@@ -1165,11 +1483,11 @@ document.addEventListener("DOMContentLoaded", () => {
       right.appendChild(btnNotes);
       right.appendChild(btnDelete);
 
-      // events
       toggle.onchange = async () => {
         item.done = toggle.checked;
         item.updatedAt = Date.now();
         item.by = deviceId;
+
         touchTodayLog(key);
         await maybeCloudSyncTodayLog();
         renderTodayPanel();
@@ -1178,6 +1496,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnDelete.onclick = async () => {
         const idx = bucket.items.findIndex(x => x.id === item.id);
         if (idx >= 0) bucket.items.splice(idx, 1);
+
         touchTodayLog(key);
         await maybeCloudSyncTodayLog();
         renderTodayPanel();
@@ -1233,7 +1552,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const key = todayKey();
       const bucket = getTodayLogBucket(key);
 
-      const item = normalizeLogItem({
+      bucket.items.unshift(normalizeLogItem({
         id: crypto?.randomUUID?.() || String(Math.random()).slice(2),
         text: todayInput.value.trim(),
         done: false,
@@ -1241,9 +1560,7 @@ document.addEventListener("DOMContentLoaded", () => {
         notes: "",
         updatedAt: Date.now(),
         by: deviceId
-      });
-
-      bucket.items.unshift(item);
+      }));
 
       todayInput.value = "";
       touchTodayLog(key);
@@ -1271,7 +1588,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const yBucket = getTodayLogBucket(yKey);
       const tBucket = getTodayLogBucket(tKey);
 
-      // normalize
       yBucket.items = (yBucket.items || []).map(normalizeLogItem).filter(Boolean);
       tBucket.items = (tBucket.items || []).map(normalizeLogItem).filter(Boolean);
 
@@ -1343,11 +1659,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Refresh
-  document.getElementById("todayRefreshBtn")?.addEventListener("click", () => {
-    renderTodayPanel();
-  });
+  document.getElementById("todayRefreshBtn")?.addEventListener("click", () => renderTodayPanel());
 
   // ---------- Initial render ----------
+  rebuildProfileSelect();
   render();
   renderTodayPanel();
 });
