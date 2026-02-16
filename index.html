@@ -63,7 +63,7 @@
     }
 
     button {
-      background: #4ade80;     /* softer green */
+      background: #4ade80;
       color: white;
       border: none;
       cursor: pointer;
@@ -81,7 +81,7 @@
     button.secondary:hover { background: #cbd5e1; }
 
     button.danger {
-      background: #f87171;     /* softer red */
+      background: #f87171;
     }
     button.danger:hover { background: #ef4444; }
 
@@ -123,7 +123,6 @@
       font-weight: 500;
     }
 
-    /* Sticky/pinned first column (Task) */
     th.task-col, td.task-col {
       position: sticky;
       left: 0;
@@ -132,10 +131,10 @@
       box-shadow: 6px 0 8px rgba(0,0,0,0.03);
     }
 
-    thead th.task-col { z-index: 4; } /* top-left cell */
+    thead th.task-col { z-index: 4; }
 
-    .done { background: #e6f7ef; }   /* pastel green */
-    .missed { background: #fdecec; } /* pastel red */
+    .done { background: #e6f7ef; }
+    .missed { background: #fdecec; }
 
     #progressBar {
       transition: width 0.4s ease;
@@ -274,10 +273,17 @@
 
     <div class="status" id="statusText">Not signed in</div>
 
+    <!-- Auth + Profiles -->
     <div class="controls">
       <button id="loginBtn">Sign In</button>
       <button id="logoutBtn" class="secondary">Logout</button>
       <button id="viewToggle" class="secondary">Toggle View</button>
+
+      <span style="margin-left:auto; font-size:12px; color:#64748b;">Profile:</span>
+      <select id="profileSelect"></select>
+      <button id="addProfileBtn" class="secondary" type="button">+ Add</button>
+      <button id="renameProfileBtn" class="secondary" type="button">Rename</button>
+      <button id="deleteProfileBtn" class="danger" type="button">Delete</button>
     </div>
 
     <div class="controls">
@@ -362,6 +368,18 @@
         <button id="todayBringForwardBtn" class="secondary" type="button">↩ Bring forward unfinished</button>
       </div>
 
+      <!-- Weekly roll-up -->
+      <div id="todayWeekly"
+           style="margin-top:10px; padding:12px; border:1px solid #e5e7eb; border-radius:14px; background: rgba(255,255,255,0.95);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div style="font-weight:800; color:#1f2937;">Weekly roll-up (last 7 days)</div>
+          <div id="todayWeeklyMeta" style="font-size:12px; color:#64748b;">—</div>
+        </div>
+
+        <div id="todayWeeklyRows" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+      <!-- /Weekly roll-up -->
+
       <div id="todayList" style="margin-top:10px; display:flex; flex-direction:column; gap:10px;"></div>
 
       <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -375,6 +393,6 @@
   <!-- Excel export dependency (SheetJS) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <script type="module" src="app.js?v=20260215a"></script>
+  <script type="module" src="app.js?v=20260216_profiles_weekly_a"></script>
 </body>
 </html>
