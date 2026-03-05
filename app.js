@@ -455,40 +455,38 @@ function cloneTasksFromPreviousMonth(prevMd, newYear, newMonth) {
 
 function getMonthData(y, m) {
   const data = getProfileDataArray();
-  let found = data.find((d) => d.year === y && d.month === m);
 
-  const pm = prevMonthOf(y, m);
-  const prev = data.find((d) => d.year === pm.y && d.month === pm.m);
+  // IMPORTANT: supports old saved data where year/month were strings
+  const findMonth = (yy, mm) =>
+    data.find(d => Number(d?.year) === Number(yy) && Number(d?.month) === Number(mm));
 
-  // Case A: Month doesn't exist yet -> create it and carry forward
+  let found = findMonth(y, m);
+
+  const pm = prevMonthOf(Number(y), Number(m));
+  const prev = findMonth(pm.y, pm.m);
+
+  // Create month if missing
   if (!found) {
     found = {
-      year: y,
-      month: m,
+      year: Number(y),
+      month: Number(m),
       tasks: prev ? cloneTasksFromPreviousMonth(prev, y, m) : [],
-      updatedAt: Date.now(),
-      _carriedFromPrev: true
+      updatedAt: Date.now()
     };
     data.push(found);
     touchProfile();
-    saveLocal(); // persist immediately so it "sticks"
+    saveLocal();
     return found;
   }
 
-  // Ensure tasks array exists
+  // Backfill if existing month is empty (this is the Feb -> Mar case)
   if (!Array.isArray(found.tasks)) found.tasks = [];
 
-  // Case B: Month exists but was previously auto-created empty -> backfill it
-  // (This is the usual reason it "still doesn't update")
-  const looksAutoEmpty =
-    found.tasks.length === 0 && (found.updatedAt === 0 || found._carriedFromPrev === true);
-
-  if (looksAutoEmpty && prev && Array.isArray(prev.tasks) && prev.tasks.length > 0) {
+  if (found.tasks.length === 0 && prev && Array.isArray(prev.tasks) && prev.tasks.length > 0) {
     found.tasks = cloneTasksFromPreviousMonth(prev, y, m);
     found.updatedAt = Date.now();
-    found._carriedFromPrev = true;
     touchProfile();
-    saveLocal(); // persist immediately
+    saveLocal();
   }
 
   return found;
