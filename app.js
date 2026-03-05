@@ -434,17 +434,50 @@ document.addEventListener("DOMContentLoaded", () => {
     return getActiveProfile().data;
   }
 
+
+function prevMonthOf(y, m) {
+  // m is 1..12
+  if (m === 1) return { y: y - 1, m: 12 };
+  return { y, m: m - 1 };
+}
+
+function cloneTasksFromPreviousMonth(prevMd, newYear, newMonth) {
+  const dim = daysInMonth(newYear, newMonth);
+  const srcTasks = Array.isArray(prevMd?.tasks) ? prevMd.tasks : [];
+
+  // Carry forward just the task names (fresh checklists for the new month)
+  return srcTasks
+    .filter(t => t && t.name)
+    .map(t => {
+      const checklist = {};
+      for (let d = 1; d <= dim; d++) checklist[d] = makeEmptyCell();
+      return { name: String(t.name), checklist, updatedAt: Date.now() };
+    });
+}
+
   function getMonthData(y, m) {
-    const data = getProfileDataArray();
-    let found = data.find((d) => d.year === y && d.month === m);
-    if (!found) {
-      found = { year: y, month: m, tasks: [], updatedAt: 0 };
-      data.push(found);
-      touchProfile();
-    }
-    if (!Array.isArray(found.tasks)) found.tasks = [];
-    return found;
+  const data = getProfileDataArray();
+  let found = data.find((d) => d.year === y && d.month === m);
+
+  if (!found) {
+    // Create month and carry forward tasks from previous month (if it exists)
+    const pm = prevMonthOf(y, m);
+    const prev = data.find((d) => d.year === pm.y && d.month === pm.m);
+
+    found = {
+      year: y,
+      month: m,
+      tasks: prev ? cloneTasksFromPreviousMonth(prev, y, m) : [],
+      updatedAt: Date.now()
+    };
+
+    data.push(found);
+    touchProfile();
   }
+
+  if (!Array.isArray(found.tasks)) found.tasks = [];
+  return found;
+}
 
   function migrateMonth(md, days) {
     md.tasks.forEach((t) => {
